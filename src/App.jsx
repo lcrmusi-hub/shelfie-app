@@ -63,10 +63,24 @@ const MONTHLY = [
 /* ---------------------------------------------------------------
    SHARED PIECES
 --------------------------------------------------------------- */
-function Cover({ id, title, size = "md" }) {
+function Cover({ id, title, coverUrl, size = "md" }) {
+  const [imgFailed, setImgFailed] = useState(false);
   const idx = hashStr(id);
   const [c1, c2] = COVER_PALETTES[idx % COVER_PALETTES.length];
   const dims = { sm: "w-12 h-16", md: "w-16 h-24", lg: "w-28 h-40", xl: "w-40 h-56" }[size];
+
+  if (coverUrl && !imgFailed) {
+    return (
+      <img
+        src={coverUrl}
+        alt={title}
+        onError={() => setImgFailed(true)}
+        className={`${dims} rounded-md shrink-0 object-cover shadow-md`}
+        style={{ boxShadow: "0 4px 14px rgba(139,94,60,0.25)" }}
+      />
+    );
+  }
+
   return (
     <div
       className={`${dims} rounded-md shrink-0 flex items-end p-1.5 shadow-md`}
@@ -181,8 +195,15 @@ function AuthScreen({ dark }) {
    MY SHELF TAB
 --------------------------------------------------------------- */
 function ShelfTab({ dark, books, onOpen }) {
-  const [filter, setFilter] = useState("currently_reading");
   const shelves = ["currently_reading", "want_to_read", "read", "dnf"];
+  const firstNonEmpty = shelves.find((s) => books.some((b) => b.shelf === s)) || "currently_reading";
+  const [filter, setFilter] = useState(firstNonEmpty);
+
+  useEffect(() => {
+    if (books.length > 0 && !books.some((b) => b.shelf === filter)) {
+      setFilter(firstNonEmpty);
+    }
+  }, [books.length]);
   const filtered = books.filter((b) => b.shelf === filter);
 
   return (
@@ -211,7 +232,7 @@ function ShelfTab({ dark, books, onOpen }) {
         )}
         {filtered.map((b) => (
           <button key={b.id} onClick={() => onOpen(b)} className="flex gap-3 p-3 rounded-2xl text-left transition active:scale-[0.98]" style={{ background: dark ? T.surfaceDark : T.surface, boxShadow: dark ? "none" : "0 2px 10px rgba(139,94,60,0.08)" }}>
-            <Cover id={b.id} title={b.title} size="md" />
+            <Cover id={b.id} title={b.title} coverUrl={b.cover_url} size="md" />
             <div className="flex-1 min-w-0 py-0.5">
               <h3 className="font-semibold text-sm truncate" style={{ fontFamily: "Playfair Display, serif", color: dark ? T.textLight : T.textPrimary }}>{b.title}</h3>
               <p className="text-xs mb-1.5" style={{ color: dark ? "#B5A68F" : T.textSecondary }}>{b.author}</p>
@@ -259,7 +280,7 @@ function BookDetail({ book, dark, onClose, onUpdate }) {
         </div>
 
         <div className="flex gap-4 mb-6">
-          <Cover id={book.id} title={book.title} size="lg" />
+          <Cover id={book.id} title={book.title} coverUrl={book.cover_url} size="lg" />
           <div className="flex-1 pt-1">
             <h2 style={{ fontFamily: "Playfair Display, serif", color: dark ? T.textLight : T.textPrimary }} className="text-xl font-bold leading-snug">{book.title}</h2>
             <p style={{ color: dark ? "#B5A68F" : T.textSecondary }} className="text-sm mb-2">{book.author}</p>
@@ -436,7 +457,7 @@ function DiscoverTab({ dark, userId, onAdded }) {
           {searching && <p className="text-xs text-center" style={{ color: dark ? "#8A7C68" : T.textSecondary }}>Searching…</p>}
           {!searching && results.map((b) => (
             <div key={b.id} className="flex gap-3 items-center p-2.5 rounded-xl" style={{ background: dark ? T.surfaceDark : "#fff" }}>
-              <Cover id={b.id} title={b.title} size="sm" />
+              <Cover id={b.id} title={b.title} coverUrl={b.cover_url} size="sm" />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate" style={{ color: dark ? T.textLight : T.textPrimary }}>{b.title}</p>
                 <p className="text-xs" style={{ color: dark ? "#8A7C68" : T.textSecondary }}>{b.author} · {b.page_count || "?"}pg</p>
@@ -568,6 +589,7 @@ function mapShelfRow(row) {
     author: row.books?.author || "Unknown",
     pages: row.books?.page_count || 0,
     genre: row.books?.genre,
+    cover_url: row.books?.cover_url,
     shelf: row.shelf,
     progress: row.progress,
     mood: row.mood,
