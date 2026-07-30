@@ -140,3 +140,37 @@ export async function updateShelfEntry(userBookId, patch) {
   if (error) throw error;
   return data;
 }
+
+/**
+ * Fills in missing page_count / description / genre for a book by looking
+ * it up on Google Books (used when the original source, e.g. Open Library,
+ * didn't have that data). Persists the result to the shared books cache.
+ */
+export async function enrichBookDetails(bookId, title, author) {
+  try {
+    const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(title + " " + (author || ""))}&maxResults=1`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const json = await res.json();
+    const info = json.items?.[0]?.volumeInfo;
+    if (!info) return null;
+
+    const patch = {};
+    if (info.pageCount) patch.page_count = info.pageCount;
+    if (info.description) patch.description = info.description;
+    if (info.categories?.[0]) patch.genre = info.categories[0];
+    if (Object.keys(patch).length === 0) return null;
+
+    const { data, error } = await supabase
+      .from("books")
+      .update(patch)
+      .eq("id", bookId)
+      .select()
+      .single();
+    if (error) return null;
+    return data;
+  } catch (e) {
+    console.warn("Enrichment failed:", e);
+    return null;
+  }
+}

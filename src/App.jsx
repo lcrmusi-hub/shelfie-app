@@ -9,7 +9,7 @@ import {
 } from "recharts";
 import { supabase } from "./lib/supabase";
 import { signInWithEmail, signUpWithEmail, signInWithGoogle, signOut } from "./lib/auth";
-import { searchBooks, addToShelf, getShelf, updateShelfEntry } from "./lib/bookSearch";
+import { searchBooks, addToShelf, getShelf, updateShelfEntry, enrichBookDetails } from "./lib/bookSearch";
 import { logReadingSession, getStreak } from "./lib/streak";
 
 /* ---------------------------------------------------------------
@@ -260,11 +260,19 @@ function ShelfTab({ dark, books, onOpen }) {
 /* ---------------------------------------------------------------
    BOOK DETAIL SHEET
 --------------------------------------------------------------- */
-function BookDetail({ book, dark, onClose, onUpdate }) {
+function BookDetail({ book, dark, onClose, onUpdate, onEnrich }) {
   const [progress, setProgress] = useState(book.progress);
   const [rating, setRating] = useState(book.rating || 0);
   const [notes, setNotes] = useState(book.private_notes || "");
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!book.description || !book.pages) {
+      enrichBookDetails(book.book_id, book.title, book.author).then((updated) => {
+        if (updated) onEnrich(book.book_id, updated);
+      });
+    }
+  }, [book.book_id]);
 
   async function saveProgress() {
     setSaving(true);
@@ -670,6 +678,21 @@ export default function Shelfie() {
     setBooks((prev) => [mapShelfRow(row), ...prev]);
   }
 
+  function handleEnrich(bookId, updatedBooksRow) {
+    setBooks((prev) => prev.map((b) => (b.book_id === bookId ? {
+      ...b,
+      pages: updatedBooksRow.page_count || b.pages,
+      description: updatedBooksRow.description || b.description,
+      genre: b.genre || updatedBooksRow.genre,
+    } : b)));
+    setOpenBook((prev) => (prev && prev.book_id === bookId ? {
+      ...prev,
+      pages: updatedBooksRow.page_count || prev.pages,
+      description: updatedBooksRow.description || prev.description,
+      genre: prev.genre || updatedBooksRow.genre,
+    } : prev));
+  }
+
   const TABS = [
     { id: "shelf", label: "My Shelf", icon: BookOpen },
     { id: "stats", label: "Stats", icon: BarChart3 },
@@ -737,7 +760,7 @@ export default function Shelfie() {
           })}
         </div>
 
-        {openBook && <BookDetail book={openBook} dark={dark} onClose={() => setOpenBook(null)} onUpdate={updateBook} />}
+        {openBook && <BookDetail book={openBook} dark={dark} onClose={() => setOpenBook(null)} onUpdate={updateBook} onEnrich={handleEnrich} />}
       </div>
     </div>
   );
