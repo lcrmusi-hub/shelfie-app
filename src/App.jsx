@@ -289,6 +289,20 @@ function BookDetail({ book, dark, onClose, onUpdate }) {
           </div>
         </div>
 
+        {book.description && (
+          <Section dark={dark} title="About this book">
+            <p className="text-sm leading-relaxed" style={{ color: dark ? "#B5A68F" : T.textSecondary }}>{book.description}</p>
+          </Section>
+        )}
+
+        <Section dark={dark} title="Find this book">
+          <div className="flex gap-2 flex-wrap">
+            <a href={`https://books.google.com/books?q=${encodeURIComponent(book.title + " " + book.author)}`} target="_blank" rel="noreferrer" className="text-xs px-3 py-2 rounded-full font-medium" style={{ background: dark ? T.surfaceDark : "#fff", color: T.primary, boxShadow: dark ? "none" : "0 1px 4px rgba(139,94,60,0.12)" }}>Google Books</a>
+            <a href={`https://www.amazon.com/s?k=${encodeURIComponent(book.title + " " + book.author)}`} target="_blank" rel="noreferrer" className="text-xs px-3 py-2 rounded-full font-medium" style={{ background: dark ? T.surfaceDark : "#fff", color: T.primary, boxShadow: dark ? "none" : "0 1px 4px rgba(139,94,60,0.12)" }}>Amazon</a>
+            <a href={`https://openlibrary.org/search?q=${encodeURIComponent(book.title + " " + book.author)}`} target="_blank" rel="noreferrer" className="text-xs px-3 py-2 rounded-full font-medium" style={{ background: dark ? T.surfaceDark : "#fff", color: T.primary, boxShadow: dark ? "none" : "0 1px 4px rgba(139,94,60,0.12)" }}>Library (Open Library)</a>
+          </div>
+        </Section>
+
         <Section dark={dark} title="Progress">
           <input type="range" min={0} max={100} value={progress} onChange={(e) => setProgress(+e.target.value)} className="w-full" style={{ accentColor: T.accent }} />
           <div className="flex justify-between text-xs" style={{ color: dark ? "#B5A68F" : T.textSecondary }}>
@@ -590,6 +604,8 @@ function mapShelfRow(row) {
     pages: row.books?.page_count || 0,
     genre: row.books?.genre,
     cover_url: row.books?.cover_url,
+    description: row.books?.description,
+    isbn: row.books?.isbn,
     shelf: row.shelf,
     progress: row.progress,
     mood: row.mood,
