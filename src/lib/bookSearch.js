@@ -1,53 +1,36 @@
 // lib/bookSearch.js
-// -------------------------------------------------------------
-// Search flow: Supabase cache -> Google Books API -> Open Library -> manual entry
-// Google Books free tier: 1000 requests/day, no key strictly required for
-// search (but get one anyway to raise your quota):
-// https://console.cloud.google.com/apis/library/books.googleapis.com
-// -------------------------------------------------------------
 import { supabase } from "./supabase";
 
-const GOOGLE_BOOKS_KEY = import.meta.env.VITE_GOOGLE_BOOKS_API_KEY; // optional but recommended
+const GOOGLE_BOOKS_KEY = import.meta.env.VITE_GOOGLE_BOOKS_API_KEY;
 
-/**
- * Search for books. Checks the local Supabase cache first (fast, free),
- * then Google Books, then falls back to Open Library if Google returns nothing.
- * Every result that comes back from an external API gets cached in `books`
- * so the next person who searches the same title doesn't cost an API call.
- */
 export async function searchBooks(query) {
   if (!query || query.trim().length < 2) return [];
 
-  // 1. Check cache first
-  const { data: cached, error: cacheError } = await supabase
+  const { data: cached } = await supabase
     .from("books")
     .select("*")
-    .textSearch("title", query, { type: "websearch" })
+    .ilike("title", `%${query}%`)
     .limit(10);
 
-  if (!cacheError && cached && cached.length > 0) {
-    return cached;
-  }
+  if (cached && cached.length > 0) return cached;
 
-  // 2. Try Google Books
   try {
-    const results = await searchGoogleBooks(query);
-    if (results.length > 0) {
-      await cacheBooks(results);
-      return results;
+    const raw = await searchGoogleBooks(query);
+    if (raw.length > 0) {
+      const cachedRows = await cacheBooks(raw);
+      return cachedRows.length ? cachedRows : raw;
     }
   } catch (e) {
     console.warn("Google Books search failed, trying Open Library:", e);
   }
 
-  // 3. Fall back to Open Library
   try {
-    const results = await searchOpenLibrary(query);
-    await cacheBooks(results);
-    return results;
+    const raw = await searchOpenLibrary(query);
+    const cachedRows = await cacheBooks(raw);
+    return cachedRows.length ? cachedRows : raw;
   } catch (e) {
     console.warn("Open Library search also failed:", e);
-    return []; // caller should show the "Add Manually" form
+    return [];
   }
 }
 
@@ -92,16 +75,19 @@ async function searchOpenLibrary(query) {
   }));
 }
 
-/** Upsert search results into the shared `books` cache table. */
 async function cacheBooks(books) {
-  if (books.length === 0) return;
-  const { error } = await supabase
-    .from("books")
-    .upsert(books, { onConflict: "google_books_id", ignoreDuplicates: true });
-  if (error) console.warn("Failed to cache books:", error);
+  const rows = [];
+  for (const book of books) {
+    const { data, error } = await supabase
+      .from("books")
+      .upsert(book, { onConflict: "google_books_id" })
+      .select()
+      .single();
+    if (!error && data) rows.push(data);
+  }
+  return rows;
 }
 
-/** Add a book the user typed in by hand (no API match found). */
 export async function addManualBook({ title, author, pageCount, coverFile }) {
   let cover_url = null;
 
@@ -124,12 +110,32 @@ export async function addManualBook({ title, author, pageCount, coverFile }) {
   return data;
 }
 
-/** Add a searched/cached book to the current user's shelf. */
 export async function addToShelf(userId, bookId, shelf = "want_to_read") {
   const { data, error } = await supabase
     .from("user_books")
-    .insert({ user_id: userId, book_id: bookId, shelf })
-    .select()
+    .upsert({ user_id: userId, book_id: bookId, shelf }, { onConflict: "user_id,book_id" })
+    .select("*, books(*)")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function getShelf(userId) {
+  const { data, error } = await supabase
+    .from("user_books")
+    .select("*, books(*)")
+    .eq("user_id", userId)
+    .order("updated_at", { ascending: false });
+  if (error) throw error;
+  return data;
+}
+
+export async function updateShelfEntry(userBookId, patch) {
+  const { data, error } = await supabase
+    .from("user_books")
+    .update(patch)
+    .eq("id", userBookId)
+    .select("*, books(*)")
     .single();
   if (error) throw error;
   return data;

@@ -1,34 +1,25 @@
-import React, { useState, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   Search, Flame, BookOpen, BarChart3, Trophy, User, Moon, Sun,
-  Plus, Star, ChevronLeft, X, Users, Share2, Download, Check,
-  Clock, TrendingUp, Award, Sparkles, MessageCircle, ShieldAlert,
-  Bookmark, Target
+  Plus, Star, ChevronLeft, Users, Share2, LogOut, Mail, Lock
 } from "lucide-react";
 import {
   PieChart, Pie, Cell, ResponsiveContainer, LineChart, Line,
   XAxis, YAxis, Tooltip
 } from "recharts";
+import { supabase } from "./lib/supabase";
+import { signInWithEmail, signUpWithEmail, signInWithGoogle, signOut } from "./lib/auth";
+import { searchBooks, addToShelf, getShelf, updateShelfEntry } from "./lib/bookSearch";
 
 /* ---------------------------------------------------------------
    COZY LIBRARY — design tokens (from brief, followed exactly)
 --------------------------------------------------------------- */
 const T = {
-  primary: "#8B5E3C",
-  primaryLight: "#A67B5B",
-  secondary: "#D4A574",
-  accent: "#C75B39",
-  accentLight: "#E07A5F",
-  bg: "#F5F0E8",
-  bgDark: "#2C2416",
-  surface: "#FFFFFF",
-  surfaceDark: "#3D3229",
-  textPrimary: "#3D2914",
-  textSecondary: "#6B5B4F",
-  textLight: "#E8DCC8",
-  success: "#6A994E",
-  warning: "#E9C46A",
-  error: "#E07A5F",
+  primary: "#8B5E3C", primaryLight: "#A67B5B", secondary: "#D4A574",
+  accent: "#C75B39", accentLight: "#E07A5F", bg: "#F5F0E8", bgDark: "#2C2416",
+  surface: "#FFFFFF", surfaceDark: "#3D3229", textPrimary: "#3D2914",
+  textSecondary: "#6B5B4F", textLight: "#E8DCC8", success: "#6A994E",
+  warning: "#E9C46A", error: "#E07A5F",
 };
 
 const COVER_PALETTES = [
@@ -36,28 +27,11 @@ const COVER_PALETTES = [
   ["#6B5B4F", "#D4A574"], ["#8B5E3C", "#E07A5F"], ["#3D2914", "#A67B5B"],
 ];
 
-/* ---------------------------------------------------------------
-   MOCK DATA — stands in for Supabase + Google Books API
---------------------------------------------------------------- */
-const MOCK_LIBRARY = [
-  { id: 1, title: "The Midnight Library", author: "Matt Haig", pages: 304, genre: "Fantasy", shelf: "currently_reading", progress: 61, mood: "Thought-provoking", pace: "Medium", rating: null },
-  { id: 2, title: "Ninth House", author: "Leigh Bardugo", pages: 458, genre: "Dark Academia", shelf: "currently_reading", progress: 22, mood: "Dark", pace: "Slow", rating: null },
-  { id: 3, title: "Legends & Lattes", author: "Travis Baldree", pages: 296, genre: "Cozy Fantasy", shelf: "read", progress: 100, mood: "Relaxing", pace: "Medium", rating: 4.5 },
-  { id: 4, title: "Babel", author: "R.F. Kuang", pages: 545, genre: "Historical Fantasy", shelf: "read", progress: 100, mood: "Thought-provoking", pace: "Slow", rating: 5 },
-  { id: 5, title: "The Song of Achilles", author: "Madeline Miller", pages: 416, genre: "Historical Fiction", shelf: "read", progress: 100, mood: "Sad", pace: "Medium", rating: 5 },
-  { id: 6, title: "Fourth Wing", author: "Rebecca Yarros", pages: 512, genre: "Romantasy", shelf: "want_to_read", progress: 0, mood: "Exciting", pace: "Fast", rating: null },
-  { id: 7, title: "Piranesi", author: "Susanna Clarke", pages: 245, genre: "Fantasy", shelf: "want_to_read", progress: 0, mood: "Thought-provoking", pace: "Slow", rating: null },
-  { id: 8, title: "A Court of Thorns and Roses", author: "Sarah J. Maas", pages: 419, genre: "Romantasy", shelf: "dnf", progress: 30, mood: "Exciting", pace: "Fast", rating: 2.5 },
-  { id: 9, title: "Circe", author: "Madeline Miller", pages: 385, genre: "Fantasy", shelf: "read", progress: 100, mood: "Thought-provoking", pace: "Medium", rating: 4.5 },
-  { id: 10, title: "Mexican Gothic", author: "Silvia Moreno-Garcia", pages: 301, genre: "Horror", shelf: "read", progress: 100, mood: "Dark", pace: "Medium", rating: 3.5 },
-];
-
-const SEARCH_INDEX = [
-  ...MOCK_LIBRARY,
-  { id: 11, title: "Tomorrow, and Tomorrow, and Tomorrow", author: "Gabrielle Zevin", pages: 416, genre: "Literary Fiction" },
-  { id: 12, title: "The House in the Cerulean Sea", author: "TJ Klune", pages: 398, genre: "Cozy Fantasy" },
-  { id: 13, title: "Iron Widow", author: "Xiran Jay Zhao", pages: 394, genre: "Sci-Fi" },
-];
+function hashStr(str) {
+  let h = 0;
+  for (let i = 0; i < String(str).length; i++) h = (h * 31 + String(str).charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
 
 const BUDDY_READS = [
   { id: 1, book: "Babel", host: "corvid_reads", spots: "2/5", pace: "1 ch/day" },
@@ -66,15 +40,15 @@ const BUDDY_READS = [
 ];
 
 const CHALLENGES = [
-  { id: 1, title: "Read 12 Books in 2026", progress: 4, target: 12, badge: "🏆" },
-  { id: 2, title: "Fantasy February", progress: 2, target: 3, badge: "🐉" },
+  { id: 1, title: "Read 12 Books in 2026", progress: 0, target: 12, badge: "🏆" },
+  { id: 2, title: "Fantasy February", progress: 0, target: 3, badge: "🐉" },
   { id: 3, title: "A Book Under 200 Pages", progress: 0, target: 1, badge: "📖" },
 ];
 
 const BADGES = [
-  { id: 1, name: "First Book", icon: "🌱", earned: true },
-  { id: 2, name: "Genre Explorer", icon: "🧭", earned: true },
-  { id: 3, name: "Night Owl", icon: "🦉", earned: true },
+  { id: 1, name: "First Book", icon: "🌱", earned: false },
+  { id: 2, name: "Genre Explorer", icon: "🧭", earned: false },
+  { id: 3, name: "Night Owl", icon: "🦉", earned: false },
   { id: 4, name: "Speed Reader", icon: "⚡", earned: false },
   { id: 5, name: "Marathon Reader", icon: "🏃", earned: false },
   { id: 6, name: "Streak Master", icon: "🔥", earned: false },
@@ -82,28 +56,23 @@ const BADGES = [
 ];
 
 const MONTHLY = [
-  { m: "Feb", pages: 220 }, { m: "Mar", pages: 410 }, { m: "Apr", pages: 180 },
-  { m: "May", pages: 560 }, { m: "Jun", pages: 340 }, { m: "Jul", pages: 610 },
+  { m: "Feb", pages: 0 }, { m: "Mar", pages: 0 }, { m: "Apr", pages: 0 },
+  { m: "May", pages: 0 }, { m: "Jun", pages: 0 }, { m: "Jul", pages: 0 },
 ];
 
 /* ---------------------------------------------------------------
    SHARED PIECES
 --------------------------------------------------------------- */
 function Cover({ id, title, size = "md" }) {
-  const [c1, c2] = COVER_PALETTES[id % COVER_PALETTES.length];
+  const idx = hashStr(id);
+  const [c1, c2] = COVER_PALETTES[idx % COVER_PALETTES.length];
   const dims = { sm: "w-12 h-16", md: "w-16 h-24", lg: "w-28 h-40", xl: "w-40 h-56" }[size];
   return (
     <div
       className={`${dims} rounded-md shrink-0 flex items-end p-1.5 shadow-md`}
-      style={{
-        background: `linear-gradient(150deg, ${c1}, ${c2})`,
-        boxShadow: "0 4px 14px rgba(139,94,60,0.25)",
-      }}
+      style={{ background: `linear-gradient(150deg, ${c1}, ${c2})`, boxShadow: "0 4px 14px rgba(139,94,60,0.25)" }}
     >
-      <span
-        className="text-white leading-tight"
-        style={{ fontFamily: "Playfair Display, serif", fontSize: size === "xl" ? "13px" : "9px", fontWeight: 700 }}
-      >
+      <span className="text-white leading-tight" style={{ fontFamily: "Playfair Display, serif", fontSize: size === "xl" ? "13px" : "9px", fontWeight: 700 }}>
         {title}
       </span>
     </div>
@@ -128,7 +97,85 @@ function Stars({ value, size = 14 }) {
   );
 }
 
+function Card({ children, dark, className = "" }) {
+  return (
+    <div className={`rounded-2xl p-4 ${className}`} style={{ background: dark ? T.surfaceDark : T.surface, boxShadow: dark ? "none" : "0 2px 10px rgba(139,94,60,0.08)" }}>
+      {children}
+    </div>
+  );
+}
+
+function Section({ dark, title, subtitle, children }) {
+  return (
+    <div className="mb-5">
+      <div className="flex items-baseline gap-2 mb-2">
+        <h4 className="text-xs font-semibold uppercase tracking-wide" style={{ color: dark ? "#B5A68F" : T.textSecondary }}>{title}</h4>
+        {subtitle && <span className="text-[10px]" style={{ color: dark ? "#7A6C58" : "#9A8A75" }}>{subtitle}</span>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
 const shelfLabel = { want_to_read: "Want to Read", currently_reading: "Currently Reading", read: "Read", dnf: "DNF" };
+
+/* ---------------------------------------------------------------
+   AUTH SCREEN
+--------------------------------------------------------------- */
+function AuthScreen({ dark }) {
+  const [mode, setMode] = useState("signin"); // signin | signup
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError("");
+    setBusy(true);
+    try {
+      if (mode === "signup") {
+        await signUpWithEmail(email, password, name);
+      } else {
+        await signInWithEmail(email, password);
+      }
+    } catch (err) {
+      setError(err.message || "Something went wrong.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="w-full min-h-screen flex flex-col justify-center px-8" style={{ background: dark ? T.bgDark : T.bg }}>
+      <h1 className="text-4xl font-bold text-center mb-1" style={{ fontFamily: "Playfair Display, serif", color: dark ? T.textLight : T.textPrimary }}>Shelfie</h1>
+      <p className="text-center text-sm mb-8" style={{ color: dark ? "#B5A68F" : T.textSecondary }}>Your cozy corner for tracking books</p>
+
+      <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+        {mode === "signup" && (
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" className="px-4 py-3 rounded-full text-sm outline-none" style={{ background: dark ? T.surfaceDark : "#fff", color: dark ? T.textLight : T.textPrimary }} />
+        )}
+        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" required className="px-4 py-3 rounded-full text-sm outline-none" style={{ background: dark ? T.surfaceDark : "#fff", color: dark ? T.textLight : T.textPrimary }} />
+        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" required minLength={6} className="px-4 py-3 rounded-full text-sm outline-none" style={{ background: dark ? T.surfaceDark : "#fff", color: dark ? T.textLight : T.textPrimary }} />
+
+        {error && <p className="text-xs text-center" style={{ color: T.error }}>{error}</p>}
+
+        <button type="submit" disabled={busy} className="py-3 rounded-full font-medium text-sm text-white mt-1" style={{ background: T.accent }}>
+          {busy ? "Please wait…" : mode === "signup" ? "Create account" : "Sign in"}
+        </button>
+      </form>
+
+      <button onClick={() => signInWithGoogle()} className="mt-3 py-3 rounded-full font-medium text-sm flex items-center justify-center gap-2" style={{ background: dark ? T.surfaceDark : "#fff", color: dark ? T.textLight : T.textPrimary }}>
+        Continue with Google
+      </button>
+
+      <button onClick={() => setMode(mode === "signup" ? "signin" : "signup")} className="mt-5 text-sm text-center" style={{ color: T.accent }}>
+        {mode === "signup" ? "Already have an account? Sign in" : "New here? Create an account"}
+      </button>
+    </div>
+  );
+}
 
 /* ---------------------------------------------------------------
    MY SHELF TAB
@@ -140,26 +187,15 @@ function ShelfTab({ dark, books, onOpen }) {
 
   return (
     <div className="px-5 pt-6 pb-4">
-      <h1 style={{ fontFamily: "Playfair Display, serif", color: dark ? T.textLight : T.textPrimary }} className="text-3xl font-bold mb-1">
-        My Shelf
-      </h1>
+      <h1 style={{ fontFamily: "Playfair Display, serif", color: dark ? T.textLight : T.textPrimary }} className="text-3xl font-bold mb-1">My Shelf</h1>
       <p style={{ color: dark ? "#B5A68F" : T.textSecondary }} className="text-sm mb-5">
         {books.filter((b) => b.shelf === "currently_reading").length} in progress · {books.filter((b) => b.shelf === "read").length} finished
       </p>
 
       <div className="flex gap-2 overflow-x-auto pb-1 mb-5 -mx-5 px-5 no-scrollbar">
         {shelves.map((s) => (
-          <button
-            key={s}
-            onClick={() => setFilter(s)}
-            className="px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition"
-            style={{
-              fontFamily: "Inter, sans-serif",
-              background: filter === s ? T.primary : dark ? T.surfaceDark : "#fff",
-              color: filter === s ? "#fff" : dark ? T.textLight : T.textSecondary,
-              boxShadow: filter === s ? "none" : dark ? "none" : "0 2px 8px rgba(139,94,60,0.10)",
-            }}
-          >
+          <button key={s} onClick={() => setFilter(s)} className="px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition"
+            style={{ fontFamily: "Inter, sans-serif", background: filter === s ? T.primary : dark ? T.surfaceDark : "#fff", color: filter === s ? "#fff" : dark ? T.textLight : T.textSecondary, boxShadow: filter === s ? "none" : dark ? "none" : "0 2px 8px rgba(139,94,60,0.10)" }}>
             {shelfLabel[s]} · {books.filter((b) => b.shelf === s).length}
           </button>
         ))}
@@ -170,15 +206,11 @@ function ShelfTab({ dark, books, onOpen }) {
           <div className="text-center py-16" style={{ color: dark ? "#8A7C68" : T.textSecondary }}>
             <BookOpen className="mx-auto mb-3 opacity-40" size={36} />
             <p className="text-sm">Nothing on this shelf yet.</p>
+            <p className="text-xs mt-1 opacity-70">Go to Discover to search and add a book.</p>
           </div>
         )}
         {filtered.map((b) => (
-          <button
-            key={b.id}
-            onClick={() => onOpen(b)}
-            className="flex gap-3 p-3 rounded-2xl text-left transition active:scale-[0.98]"
-            style={{ background: dark ? T.surfaceDark : T.surface, boxShadow: dark ? "none" : "0 2px 10px rgba(139,94,60,0.08)" }}
-          >
+          <button key={b.id} onClick={() => onOpen(b)} className="flex gap-3 p-3 rounded-2xl text-left transition active:scale-[0.98]" style={{ background: dark ? T.surfaceDark : T.surface, boxShadow: dark ? "none" : "0 2px 10px rgba(139,94,60,0.08)" }}>
             <Cover id={b.id} title={b.title} size="md" />
             <div className="flex-1 min-w-0 py-0.5">
               <h3 className="font-semibold text-sm truncate" style={{ fontFamily: "Playfair Display, serif", color: dark ? T.textLight : T.textPrimary }}>{b.title}</h3>
@@ -188,12 +220,12 @@ function ShelfTab({ dark, books, onOpen }) {
                   <div className="w-full h-1.5 rounded-full overflow-hidden mb-1" style={{ background: dark ? "#544736" : "#EDE3D3" }}>
                     <div className="h-full rounded-full" style={{ width: `${b.progress}%`, background: T.accent }} />
                   </div>
-                  <p className="text-[11px]" style={{ color: T.accent, fontFamily: "Space Grotesk, monospace" }}>{b.progress}% · {Math.round(b.pages * b.progress / 100)}/{b.pages} pg</p>
+                  <p className="text-[11px]" style={{ color: T.accent, fontFamily: "Space Grotesk, monospace" }}>{b.progress}% · {Math.round((b.pages || 0) * b.progress / 100)}/{b.pages || 0} pg</p>
                 </>
               )}
               {b.rating != null && <Stars value={b.rating} />}
               <div className="flex gap-1.5 mt-1.5 flex-wrap">
-                <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: dark ? "#4a3d2d" : T.bg, color: dark ? T.textLight : T.textSecondary }}>{b.genre}</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: dark ? "#4a3d2d" : T.bg, color: dark ? T.textLight : T.textSecondary }}>{b.genre || "Unsorted"}</span>
               </div>
             </div>
           </button>
@@ -209,16 +241,18 @@ function ShelfTab({ dark, books, onOpen }) {
 function BookDetail({ book, dark, onClose, onUpdate }) {
   const [progress, setProgress] = useState(book.progress);
   const [rating, setRating] = useState(book.rating || 0);
-  const [notes, setNotes] = useState("");
-  const shareRef = useRef(null);
+  const [notes, setNotes] = useState(book.private_notes || "");
+  const [saving, setSaving] = useState(false);
+
+  async function saveProgress() {
+    setSaving(true);
+    await onUpdate(book.id, { progress });
+    setSaving(false);
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-end" style={{ background: "rgba(20,14,8,0.55)" }} onClick={onClose}>
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-h-[92vh] overflow-y-auto rounded-t-3xl p-6 pb-10"
-        style={{ background: dark ? T.bgDark : T.bg }}
-      >
+      <div onClick={(e) => e.stopPropagation()} className="w-full max-h-[92vh] overflow-y-auto rounded-t-3xl p-6 pb-10" style={{ background: dark ? T.bgDark : T.bg }}>
         <div className="flex justify-between items-center mb-4">
           <button onClick={onClose} style={{ color: dark ? T.textLight : T.textPrimary }}><ChevronLeft /></button>
           <button style={{ color: dark ? T.textLight : T.textPrimary }}><Share2 size={18} /></button>
@@ -229,50 +263,37 @@ function BookDetail({ book, dark, onClose, onUpdate }) {
           <div className="flex-1 pt-1">
             <h2 style={{ fontFamily: "Playfair Display, serif", color: dark ? T.textLight : T.textPrimary }} className="text-xl font-bold leading-snug">{book.title}</h2>
             <p style={{ color: dark ? "#B5A68F" : T.textSecondary }} className="text-sm mb-2">{book.author}</p>
-            <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: T.primary, color: "#fff" }}>{book.genre}</span>
-            <p className="text-xs mt-2" style={{ color: dark ? "#8A7C68" : T.textSecondary }}>{book.pages} pages · {book.pace} pace</p>
+            <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: T.primary, color: "#fff" }}>{book.genre || "Unsorted"}</span>
+            <p className="text-xs mt-2" style={{ color: dark ? "#8A7C68" : T.textSecondary }}>{book.pages || 0} pages</p>
           </div>
         </div>
 
         <Section dark={dark} title="Progress">
-          <input type="range" min={0} max={100} value={progress} onChange={(e) => setProgress(+e.target.value)} className="w-full accent-current" style={{ accentColor: T.accent }} />
+          <input type="range" min={0} max={100} value={progress} onChange={(e) => setProgress(+e.target.value)} className="w-full" style={{ accentColor: T.accent }} />
           <div className="flex justify-between text-xs" style={{ color: dark ? "#B5A68F" : T.textSecondary }}>
-            <span>{Math.round(book.pages * progress / 100)} / {book.pages} pages</span>
+            <span>{Math.round((book.pages || 0) * progress / 100)} / {book.pages || 0} pages</span>
             <span style={{ color: T.accent, fontFamily: "Space Grotesk, monospace" }}>{progress}%</span>
           </div>
-          <button onClick={() => onUpdate(book.id, { progress })} className="mt-3 w-full py-2.5 rounded-full font-medium text-sm text-white" style={{ background: T.accent }}>
-            Update Progress
+          <button onClick={saveProgress} disabled={saving} className="mt-3 w-full py-2.5 rounded-full font-medium text-sm text-white" style={{ background: T.accent }}>
+            {saving ? "Saving…" : "Update Progress"}
           </button>
         </Section>
 
         <Section dark={dark} title="Your Rating">
           <div className="flex gap-1">
             {[1, 2, 3, 4, 5].map((n) => (
-              <button key={n} onClick={() => setRating(n)}>
+              <button key={n} onClick={() => { setRating(n); onUpdate(book.id, { rating: n }); }}>
                 <Star size={26} color={T.accent} fill={rating >= n ? T.accent : "none"} />
               </button>
             ))}
           </div>
         </Section>
 
-        <Section dark={dark} title="Mood & Pace">
-          <div className="flex gap-2 flex-wrap">
-            {["Happy", "Sad", "Dark", "Exciting", "Relaxing", "Thought-provoking"].map((m) => (
-              <Tag key={m} active={m === book.mood} dark={dark}>{m}</Tag>
-            ))}
-          </div>
-        </Section>
-
-        <Section dark={dark} title="Content Warnings" subtitle="community-tagged">
-          <div className="flex gap-2 flex-wrap">
-            <span className="text-xs px-2.5 py-1 rounded-full flex items-center gap-1" style={{ background: "#F6E4DD", color: T.accent }}><ShieldAlert size={12} /> Grief</span>
-            <span className="text-xs px-2.5 py-1 rounded-full" style={{ background: "#F6E4DD", color: T.accent }}>Mild violence</span>
-          </div>
-        </Section>
-
         <Section dark={dark} title="Private Notes">
           <textarea
-            value={notes} onChange={(e) => setNotes(e.target.value)}
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            onBlur={() => onUpdate(book.id, { private_notes: notes })}
             placeholder="Only you can see this..."
             rows={3}
             className="w-full rounded-xl p-3 text-sm outline-none"
@@ -280,38 +301,11 @@ function BookDetail({ book, dark, onClose, onUpdate }) {
           />
         </Section>
 
-        <button className="w-full py-3 rounded-full font-medium text-sm mt-2 flex items-center justify-center gap-2" style={{ background: T.primary, color: "#fff", fontFamily: "Inter, sans-serif" }}>
+        <button className="w-full py-3 rounded-full font-medium text-sm mt-2 flex items-center justify-center gap-2" style={{ background: T.primary, color: "#fff" }}>
           <Users size={16} /> Start Buddy Read
         </button>
       </div>
     </div>
-  );
-}
-
-function Section({ dark, title, subtitle, children }) {
-  return (
-    <div className="mb-5">
-      <div className="flex items-baseline gap-2 mb-2">
-        <h4 className="text-xs font-semibold uppercase tracking-wide" style={{ color: dark ? "#B5A68F" : T.textSecondary, fontFamily: "Inter, sans-serif" }}>{title}</h4>
-        {subtitle && <span className="text-[10px]" style={{ color: dark ? "#7A6C58" : "#9A8A75" }}>{subtitle}</span>}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function Tag({ children, active, dark }) {
-  return (
-    <span
-      className="text-xs px-3 py-1.5 rounded-full font-medium"
-      style={{
-        background: active ? T.accent : dark ? T.surfaceDark : "#fff",
-        color: active ? "#fff" : dark ? T.textLight : T.textSecondary,
-        boxShadow: active || dark ? "none" : "0 1px 4px rgba(139,94,60,0.12)",
-      }}
-    >
-      {children}
-    </span>
   );
 }
 
@@ -324,45 +318,28 @@ function CircularGoal({ done, target, dark }) {
   return (
     <svg width={140} height={140} className="mx-auto">
       <circle cx={70} cy={70} r={r} stroke={dark ? "#4a3d2d" : "#EDE3D3"} strokeWidth={12} fill="none" />
-      <circle
-        cx={70} cy={70} r={r} stroke={T.accent} strokeWidth={12} fill="none"
-        strokeDasharray={c} strokeDashoffset={c - (pct / 100) * c}
-        strokeLinecap="round" transform="rotate(-90 70 70)"
-      />
+      <circle cx={70} cy={70} r={r} stroke={T.accent} strokeWidth={12} fill="none" strokeDasharray={c} strokeDashoffset={c - (pct / 100) * c} strokeLinecap="round" transform="rotate(-90 70 70)" />
       <text x={70} y={65} textAnchor="middle" fontSize="26" fontWeight="700" fill={dark ? T.textLight : T.textPrimary} fontFamily="Space Grotesk, monospace">{done}</text>
-      <text x={70} y={84} textAnchor="middle" fontSize="11" fill={dark ? "#B5A68F" : T.textSecondary} fontFamily="Inter, sans-serif">of {target} books</text>
+      <text x={70} y={84} textAnchor="middle" fontSize="11" fill={dark ? "#B5A68F" : T.textSecondary}>of {target} books</text>
     </svg>
   );
 }
 
 function StatsTab({ dark, books }) {
   const finished = books.filter((b) => b.shelf === "read");
-  const totalPages = finished.reduce((a, b) => a + b.pages, 0);
-  const avgRating = (finished.reduce((a, b) => a + (b.rating || 0), 0) / finished.length).toFixed(1);
+  const totalPages = finished.reduce((a, b) => a + (b.pages || 0), 0);
+  const avgRating = finished.length ? (finished.reduce((a, b) => a + (b.rating || 0), 0) / finished.length).toFixed(1) : "0.0";
 
   const genreData = useMemo(() => {
     const m = {};
-    finished.forEach((b) => (m[b.genre] = (m[b.genre] || 0) + 1));
+    finished.forEach((b) => { const g = b.genre || "Unsorted"; m[g] = (m[g] || 0) + 1; });
     const palette = [T.primary, T.accent, T.secondary, T.success, T.accentLight];
     return Object.entries(m).map(([name, value], i) => ({ name, value, color: palette[i % palette.length] }));
   }, [finished]);
 
-  const moodData = useMemo(() => {
-    const m = {};
-    finished.forEach((b) => (m[b.mood] = (m[b.mood] || 0) + 1));
-    return Object.entries(m);
-  }, [finished]);
-
-  const moodColors = { Happy: T.warning, Sad: T.primaryLight, Dark: T.textSecondary, Exciting: T.accent, Relaxing: T.success, "Thought-provoking": T.secondary };
-
   return (
     <div className="px-5 pt-6 pb-4">
-      <div className="flex justify-between items-center mb-5">
-        <h1 style={{ fontFamily: "Playfair Display, serif", color: dark ? T.textLight : T.textPrimary }} className="text-3xl font-bold">Stats</h1>
-        <button className="flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-medium text-white" style={{ background: T.primary }}>
-          <Share2 size={13} /> Share
-        </button>
-      </div>
+      <h1 style={{ fontFamily: "Playfair Display, serif", color: dark ? T.textLight : T.textPrimary }} className="text-3xl font-bold mb-5">Stats</h1>
 
       <Card dark={dark}><CircularGoal done={finished.length} target={12} dark={dark} /></Card>
 
@@ -380,66 +357,32 @@ function StatsTab({ dark, books }) {
         </Card>
       </div>
 
-      <Card dark={dark} className="mt-3">
-        <h4 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: dark ? "#B5A68F" : T.textSecondary }}>Genres</h4>
-        <div className="flex items-center gap-3">
-          <div style={{ width: 100, height: 100 }}>
-            <ResponsiveContainer>
-              <PieChart>
-                <Pie data={genreData} dataKey="value" innerRadius={28} outerRadius={45} paddingAngle={3}>
-                  {genreData.map((g, i) => <Cell key={i} fill={g.color} />)}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="flex-1 flex flex-col gap-1.5">
-            {genreData.map((g) => (
-              <div key={g.name} className="flex items-center gap-2 text-xs">
-                <span className="w-2.5 h-2.5 rounded-full" style={{ background: g.color }} />
-                <span style={{ color: dark ? T.textLight : T.textPrimary }}>{g.name}</span>
-                <span className="ml-auto" style={{ color: dark ? "#8A7C68" : T.textSecondary }}>{g.value}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </Card>
-
-      <Card dark={dark} className="mt-3">
-        <h4 className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: dark ? "#B5A68F" : T.textSecondary }}>Mood breakdown</h4>
-        <div className="flex flex-col gap-2">
-          {moodData.map(([mood, count]) => (
-            <div key={mood} className="flex items-center gap-2">
-              <span className="text-xs w-28 shrink-0" style={{ color: dark ? T.textLight : T.textPrimary }}>{mood}</span>
-              <div className="flex-1 h-2.5 rounded-full overflow-hidden" style={{ background: dark ? "#4a3d2d" : "#EDE3D3" }}>
-                <div className="h-full rounded-full" style={{ width: `${(count / finished.length) * 100}%`, background: moodColors[mood] || T.accent }} />
-              </div>
+      {genreData.length > 0 && (
+        <Card dark={dark} className="mt-3">
+          <h4 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: dark ? "#B5A68F" : T.textSecondary }}>Genres</h4>
+          <div className="flex items-center gap-3">
+            <div style={{ width: 100, height: 100 }}>
+              <ResponsiveContainer>
+                <PieChart>
+                  <Pie data={genreData} dataKey="value" innerRadius={28} outerRadius={45} paddingAngle={3}>
+                    {genreData.map((g, i) => <Cell key={i} fill={g.color} />)}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
             </div>
-          ))}
-        </div>
-      </Card>
-
-      <Card dark={dark} className="mt-3">
-        <h4 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: dark ? "#B5A68F" : T.textSecondary }}>Monthly pages</h4>
-        <div style={{ height: 140 }}>
-          <ResponsiveContainer>
-            <LineChart data={MONTHLY}>
-              <XAxis dataKey="m" tick={{ fontSize: 11, fill: dark ? "#B5A68F" : T.textSecondary }} axisLine={false} tickLine={false} />
-              <YAxis hide />
-              <Tooltip />
-              <Line type="monotone" dataKey="pages" stroke={T.accent} strokeWidth={2.5} dot={{ r: 3, fill: T.accent }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </Card>
-    </div>
-  );
-}
-
-function Card({ children, dark, className = "" }) {
-  return (
-    <div className={`rounded-2xl p-4 ${className}`} style={{ background: dark ? T.surfaceDark : T.surface, boxShadow: dark ? "none" : "0 2px 10px rgba(139,94,60,0.08)" }}>
-      {children}
+            <div className="flex-1 flex flex-col gap-1.5">
+              {genreData.map((g) => (
+                <div key={g.name} className="flex items-center gap-2 text-xs">
+                  <span className="w-2.5 h-2.5 rounded-full" style={{ background: g.color }} />
+                  <span style={{ color: dark ? T.textLight : T.textPrimary }}>{g.name}</span>
+                  <span className="ml-auto" style={{ color: dark ? "#8A7C68" : T.textSecondary }}>{g.value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
@@ -447,9 +390,37 @@ function Card({ children, dark, className = "" }) {
 /* ---------------------------------------------------------------
    DISCOVER TAB
 --------------------------------------------------------------- */
-function DiscoverTab({ dark }) {
+function DiscoverTab({ dark, userId, onAdded }) {
   const [query, setQuery] = useState("");
-  const results = query.length > 0 ? SEARCH_INDEX.filter((b) => b.title.toLowerCase().includes(query.toLowerCase()) || b.author.toLowerCase().includes(query.toLowerCase())) : [];
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [addedIds, setAddedIds] = useState({});
+
+  useEffect(() => {
+    if (query.trim().length < 2) { setResults([]); return; }
+    const t = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const r = await searchBooks(query);
+        setResults(r);
+      } catch (e) {
+        console.warn(e);
+      } finally {
+        setSearching(false);
+      }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  async function handleAdd(book) {
+    try {
+      const row = await addToShelf(userId, book.id, "want_to_read");
+      setAddedIds((prev) => ({ ...prev, [book.id]: true }));
+      onAdded(row);
+    } catch (e) {
+      console.warn("Failed to add book:", e);
+    }
+  }
 
   return (
     <div className="px-5 pt-6 pb-4">
@@ -457,44 +428,30 @@ function DiscoverTab({ dark }) {
 
       <div className="relative mb-6">
         <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: dark ? "#8A7C68" : T.textSecondary }} />
-        <input
-          value={query} onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search books, authors..."
-          className="w-full pl-10 pr-4 py-3 rounded-full text-sm outline-none"
-          style={{ background: dark ? T.surfaceDark : "#fff", color: dark ? T.textLight : T.textPrimary, boxShadow: dark ? "none" : "0 2px 10px rgba(139,94,60,0.08)" }}
-        />
+        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search books, authors..." className="w-full pl-10 pr-4 py-3 rounded-full text-sm outline-none" style={{ background: dark ? T.surfaceDark : "#fff", color: dark ? T.textLight : T.textPrimary, boxShadow: dark ? "none" : "0 2px 10px rgba(139,94,60,0.08)" }} />
       </div>
 
-      {query.length > 0 ? (
+      {query.trim().length > 0 ? (
         <div className="flex flex-col gap-2 mb-6">
-          {results.map((b) => (
+          {searching && <p className="text-xs text-center" style={{ color: dark ? "#8A7C68" : T.textSecondary }}>Searching…</p>}
+          {!searching && results.map((b) => (
             <div key={b.id} className="flex gap-3 items-center p-2.5 rounded-xl" style={{ background: dark ? T.surfaceDark : "#fff" }}>
               <Cover id={b.id} title={b.title} size="sm" />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate" style={{ color: dark ? T.textLight : T.textPrimary }}>{b.title}</p>
-                <p className="text-xs" style={{ color: dark ? "#8A7C68" : T.textSecondary }}>{b.author} · {b.pages}pg</p>
+                <p className="text-xs" style={{ color: dark ? "#8A7C68" : T.textSecondary }}>{b.author} · {b.page_count || "?"}pg</p>
               </div>
-              <button className="p-2 rounded-full" style={{ background: T.bg, color: T.primary }}><Plus size={16} /></button>
+              <button onClick={() => handleAdd(b)} className="p-2 rounded-full" style={{ background: addedIds[b.id] ? T.success : T.bg, color: addedIds[b.id] ? "#fff" : T.primary }}>
+                <Plus size={16} />
+              </button>
             </div>
           ))}
-          {results.length === 0 && (
-            <button className="text-sm font-medium py-3 rounded-full text-center" style={{ color: T.accent }}>+ Add "{query}" manually</button>
+          {!searching && results.length === 0 && (
+            <p className="text-sm text-center py-6" style={{ color: dark ? "#8A7C68" : T.textSecondary }}>No matches found. Try a different search.</p>
           )}
         </div>
       ) : (
         <>
-          <div className="mb-6">
-            <h3 className="text-sm font-semibold mb-2 flex items-center gap-1.5" style={{ color: dark ? T.textLight : T.textPrimary }}><Sparkles size={15} color={T.accent} /> Because you liked Circe</h3>
-            <div className="flex gap-3 overflow-x-auto pb-1 -mx-5 px-5 no-scrollbar">
-              {SEARCH_INDEX.slice(10, 13).map((b) => (
-                <div key={b.id} className="shrink-0 w-24">
-                  <Cover id={b.id} title={b.title} size="lg" />
-                  <p className="text-xs mt-1.5 truncate font-medium" style={{ color: dark ? T.textLight : T.textPrimary }}>{b.title}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-
           <h3 className="text-sm font-semibold mb-2" style={{ color: dark ? T.textLight : T.textPrimary }}>Buddy Reads open now</h3>
           <div className="flex flex-col gap-2">
             {BUDDY_READS.map((br) => (
@@ -548,17 +505,17 @@ function ChallengesTab({ dark }) {
 /* ---------------------------------------------------------------
    PROFILE TAB
 --------------------------------------------------------------- */
-function ProfileTab({ dark, setDark, streak }) {
+function ProfileTab({ dark, setDark, user, streak }) {
   return (
     <div className="px-5 pt-6 pb-4">
       <h1 style={{ fontFamily: "Playfair Display, serif", color: dark ? T.textLight : T.textPrimary }} className="text-3xl font-bold mb-5">Profile</h1>
 
       <Card dark={dark} className="flex items-center gap-4 mb-4">
         <div className="w-16 h-16 rounded-full flex items-center justify-center text-2xl font-bold text-white" style={{ background: `linear-gradient(135deg, ${T.primary}, ${T.accent})`, fontFamily: "Playfair Display, serif" }}>
-          A
+          {(user?.email || "?")[0].toUpperCase()}
         </div>
         <div>
-          <p className="font-semibold" style={{ fontFamily: "Playfair Display, serif", color: dark ? T.textLight : T.textPrimary }}>Aiko Reads</p>
+          <p className="font-semibold" style={{ fontFamily: "Playfair Display, serif", color: dark ? T.textLight : T.textPrimary }}>{user?.email}</p>
           <p className="text-xs" style={{ color: dark ? "#8A7C68" : T.textSecondary }}>Reading goal: 12 books/yr</p>
         </div>
       </Card>
@@ -583,21 +540,41 @@ function ProfileTab({ dark, setDark, streak }) {
         </div>
       </Card>
 
-      <Card dark={dark} className="flex items-center justify-between">
+      <Card dark={dark} className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           {dark ? <Moon size={18} color={T.textLight} /> : <Sun size={18} color={T.primary} />}
           <span className="text-sm font-medium" style={{ color: dark ? T.textLight : T.textPrimary }}>Dark mode</span>
         </div>
-        <button
-          onClick={() => setDark(!dark)}
-          className="w-12 h-7 rounded-full relative transition"
-          style={{ background: dark ? T.accent : "#D9CDB8" }}
-        >
+        <button onClick={() => setDark(!dark)} className="w-12 h-7 rounded-full relative transition" style={{ background: dark ? T.accent : "#D9CDB8" }}>
           <span className="absolute top-0.5 w-6 h-6 rounded-full bg-white transition-all" style={{ left: dark ? "22px" : "2px" }} />
         </button>
       </Card>
+
+      <button onClick={() => signOut()} className="w-full py-3 rounded-full font-medium text-sm flex items-center justify-center gap-2" style={{ background: dark ? T.surfaceDark : "#fff", color: T.error }}>
+        <LogOut size={16} /> Sign out
+      </button>
     </div>
   );
+}
+
+/* ---------------------------------------------------------------
+   DATA MAPPING
+--------------------------------------------------------------- */
+function mapShelfRow(row) {
+  return {
+    id: row.id,
+    book_id: row.book_id,
+    title: row.books?.title || "Untitled",
+    author: row.books?.author || "Unknown",
+    pages: row.books?.page_count || 0,
+    genre: row.books?.genre,
+    shelf: row.shelf,
+    progress: row.progress,
+    mood: row.mood,
+    pace: row.pace,
+    rating: row.rating,
+    private_notes: row.private_notes,
+  };
 }
 
 /* ---------------------------------------------------------------
@@ -606,14 +583,38 @@ function ProfileTab({ dark, setDark, streak }) {
 export default function Shelfie() {
   const [dark, setDark] = useState(false);
   const [tab, setTab] = useState("shelf");
-  const [books, setBooks] = useState(MOCK_LIBRARY);
+  const [session, setSession] = useState(undefined); // undefined = loading, null = logged out
+  const [books, setBooks] = useState([]);
   const [openBook, setOpenBook] = useState(null);
-  const streak = 5;
+  const streak = 0;
 
-  const updateBook = (id, patch) => {
-    setBooks((prev) => prev.map((b) => (b.id === id ? { ...b, ...patch } : b)));
-    setOpenBook((prev) => (prev ? { ...prev, ...patch } : prev));
-  };
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSession(data.session ?? null));
+    const { data: listener } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!session?.user) return;
+    getShelf(session.user.id)
+      .then((rows) => setBooks(rows.map(mapShelfRow)))
+      .catch((e) => console.warn("Failed to load shelf:", e));
+  }, [session?.user?.id]);
+
+  async function updateBook(userBookId, patch) {
+    try {
+      const updated = await updateShelfEntry(userBookId, patch);
+      const mapped = mapShelfRow(updated);
+      setBooks((prev) => prev.map((b) => (b.id === userBookId ? mapped : b)));
+      setOpenBook((prev) => (prev && prev.id === userBookId ? mapped : prev));
+    } catch (e) {
+      console.warn("Failed to update book:", e);
+    }
+  }
+
+  function handleBookAdded(row) {
+    setBooks((prev) => [mapShelfRow(row), ...prev]);
+  }
 
   const TABS = [
     { id: "shelf", label: "My Shelf", icon: BookOpen },
@@ -623,18 +624,38 @@ export default function Shelfie() {
     { id: "profile", label: "Profile", icon: User },
   ];
 
+  const fontStyles = (
+    <style>{`
+      @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    `}</style>
+  );
+
+  if (session === undefined) {
+    return (
+      <div className="w-full min-h-screen flex items-center justify-center" style={{ background: T.bg }}>
+        {fontStyles}
+        <p style={{ color: T.textSecondary, fontFamily: "Inter, sans-serif" }}>Loading…</p>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <div className="w-full min-h-screen flex justify-center" style={{ fontFamily: "Inter, sans-serif" }}>
+        {fontStyles}
+        <div className="w-full max-w-md">
+          <AuthScreen dark={dark} />
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div style={{ fontFamily: "Inter, sans-serif" }} className="w-full min-h-screen flex justify-center" >
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-      `}</style>
-      <div
-        className="w-full max-w-md min-h-screen relative"
-        style={{ background: dark ? T.bgDark : T.bg, transition: "background 0.25s" }}
-      >
-        {/* streak pill top bar */}
+    <div style={{ fontFamily: "Inter, sans-serif" }} className="w-full min-h-screen flex justify-center">
+      {fontStyles}
+      <div className="w-full max-w-md min-h-screen relative" style={{ background: dark ? T.bgDark : T.bg, transition: "background 0.25s" }}>
         <div className="sticky top-0 z-10 flex justify-end px-5 pt-4">
           <div className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold" style={{ background: dark ? T.surfaceDark : "#fff", color: T.accent, boxShadow: dark ? "none" : "0 2px 8px rgba(139,94,60,0.10)" }}>
             <Flame size={13} fill={T.accent} color={T.accent} /> {streak}
@@ -644,22 +665,18 @@ export default function Shelfie() {
         <div className="pb-24">
           {tab === "shelf" && <ShelfTab dark={dark} books={books} onOpen={setOpenBook} />}
           {tab === "stats" && <StatsTab dark={dark} books={books} />}
-          {tab === "discover" && <DiscoverTab dark={dark} />}
+          {tab === "discover" && <DiscoverTab dark={dark} userId={session.user.id} onAdded={handleBookAdded} />}
           {tab === "challenges" && <ChallengesTab dark={dark} />}
-          {tab === "profile" && <ProfileTab dark={dark} setDark={setDark} streak={streak} />}
+          {tab === "profile" && <ProfileTab dark={dark} setDark={setDark} user={session.user} streak={streak} />}
         </div>
 
-        {/* bottom tab nav */}
-        <div
-          className="fixed bottom-0 w-full max-w-md flex justify-around items-center py-2.5 z-20"
-          style={{ background: dark ? T.surfaceDark : "#fff", borderTop: `1px solid ${dark ? "#4a3d2d" : "#EDE3D3"}` }}
-        >
+        <div className="fixed bottom-0 w-full max-w-md flex justify-around items-center py-2.5 z-20" style={{ background: dark ? T.surfaceDark : "#fff", borderTop: `1px solid ${dark ? "#4a3d2d" : "#EDE3D3"}` }}>
           {TABS.map((t) => {
             const Icon = t.icon;
             const active = tab === t.id;
             return (
               <button key={t.id} onClick={() => setTab(t.id)} className="flex flex-col items-center gap-0.5 px-2 py-1">
-                <Icon size={21} color={active ? T.accent : dark ? "#8A7C68" : T.textSecondary} fill={active && t.id === "shelf" ? "none" : "none"} />
+                <Icon size={21} color={active ? T.accent : dark ? "#8A7C68" : T.textSecondary} />
                 <span className="text-[10px] font-medium" style={{ color: active ? T.accent : dark ? "#8A7C68" : T.textSecondary }}>{t.label}</span>
               </button>
             );
