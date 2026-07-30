@@ -10,6 +10,7 @@ import {
 import { supabase } from "./lib/supabase";
 import { signInWithEmail, signUpWithEmail, signInWithGoogle, signOut } from "./lib/auth";
 import { searchBooks, addToShelf, getShelf, updateShelfEntry } from "./lib/bookSearch";
+import { logReadingSession, getStreak } from "./lib/streak";
 
 /* ---------------------------------------------------------------
    COZY LIBRARY — design tokens (from brief, followed exactly)
@@ -624,7 +625,7 @@ export default function Shelfie() {
   const [session, setSession] = useState(undefined); // undefined = loading, null = logged out
   const [books, setBooks] = useState([]);
   const [openBook, setOpenBook] = useState(null);
-  const streak = 0;
+  const [streak, setStreak] = useState(0);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session ?? null));
@@ -637,14 +638,29 @@ export default function Shelfie() {
     getShelf(session.user.id)
       .then((rows) => setBooks(rows.map(mapShelfRow)))
       .catch((e) => console.warn("Failed to load shelf:", e));
+    getStreak(session.user.id)
+      .then(setStreak)
+      .catch((e) => console.warn("Failed to load streak:", e));
   }, [session?.user?.id]);
 
   async function updateBook(userBookId, patch) {
     try {
+      const before = books.find((b) => b.id === userBookId);
       const updated = await updateShelfEntry(userBookId, patch);
       const mapped = mapShelfRow(updated);
       setBooks((prev) => prev.map((b) => (b.id === userBookId ? mapped : b)));
       setOpenBook((prev) => (prev && prev.id === userBookId ? mapped : prev));
+
+      if (patch.progress !== undefined && before) {
+        const pagesBefore = Math.round((before.pages || 0) * (before.progress || 0) / 100);
+        const pagesAfter = Math.round((mapped.pages || 0) * (mapped.progress || 0) / 100);
+        const pagesDelta = pagesAfter - pagesBefore;
+        if (pagesDelta > 0) {
+          await logReadingSession(session.user.id, mapped.book_id, pagesDelta);
+          const newStreak = await getStreak(session.user.id);
+          setStreak(newStreak);
+        }
+      }
     } catch (e) {
       console.warn("Failed to update book:", e);
     }
