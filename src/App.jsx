@@ -11,6 +11,7 @@ import { supabase } from "./lib/supabase";
 import { signInWithEmail, signUpWithEmail, signInWithGoogle, signOut } from "./lib/auth";
 import { searchBooks, addToShelf, getShelf, updateShelfEntry, enrichBookDetails } from "./lib/bookSearch";
 import { logReadingSession, getStreak } from "./lib/streak";
+import { getBadgeStatus } from "./lib/badges";
 
 /* ---------------------------------------------------------------
    COZY LIBRARY — design tokens (from brief, followed exactly)
@@ -549,7 +550,7 @@ function ChallengesTab({ dark }) {
 /* ---------------------------------------------------------------
    PROFILE TAB
 --------------------------------------------------------------- */
-function ProfileTab({ dark, setDark, user, streak }) {
+function ProfileTab({ dark, setDark, user, streak, earnedBadges }) {
   return (
     <div className="px-5 pt-6 pb-4">
       <h1 style={{ fontFamily: "Playfair Display, serif", color: dark ? T.textLight : T.textPrimary }} className="text-3xl font-bold mb-5">Profile</h1>
@@ -575,12 +576,15 @@ function ProfileTab({ dark, setDark, user, streak }) {
       <Card dark={dark} className="mb-4">
         <h4 className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: dark ? "#B5A68F" : T.textSecondary }}>Badges</h4>
         <div className="grid grid-cols-4 gap-3">
-          {BADGES.map((b) => (
-            <div key={b.id} className="flex flex-col items-center gap-1">
-              <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-xl" style={{ background: b.earned ? T.bg : dark ? "#33291c" : "#EDE3D3", opacity: b.earned ? 1 : 0.4 }}>{b.icon}</div>
-              <p className="text-[9px] text-center leading-tight" style={{ color: dark ? "#8A7C68" : T.textSecondary }}>{b.name}</p>
-            </div>
-          ))}
+          {BADGES.map((b) => {
+            const earned = !!earnedBadges[b.name];
+            return (
+              <div key={b.id} className="flex flex-col items-center gap-1">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-xl" style={{ background: earned ? T.bg : dark ? "#33291c" : "#EDE3D3", opacity: earned ? 1 : 0.4 }}>{b.icon}</div>
+                <p className="text-[9px] text-center leading-tight" style={{ color: dark ? "#8A7C68" : T.textSecondary }}>{b.name}</p>
+              </div>
+            );
+          })}
         </div>
       </Card>
 
@@ -634,6 +638,7 @@ export default function Shelfie() {
   const [books, setBooks] = useState([]);
   const [openBook, setOpenBook] = useState(null);
   const [streak, setStreak] = useState(0);
+  const [earnedBadges, setEarnedBadges] = useState({});
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session ?? null));
@@ -650,6 +655,13 @@ export default function Shelfie() {
       .then(setStreak)
       .catch((e) => console.warn("Failed to load streak:", e));
   }, [session?.user?.id]);
+
+  useEffect(() => {
+    if (!session?.user || books.length === 0) return;
+    getBadgeStatus(session.user.id, books, streak)
+      .then(setEarnedBadges)
+      .catch((e) => console.warn("Failed to compute badges:", e));
+  }, [session?.user?.id, books.length, streak]);
 
   async function updateBook(userBookId, patch) {
     try {
@@ -744,7 +756,7 @@ export default function Shelfie() {
           {tab === "stats" && <StatsTab dark={dark} books={books} />}
           {tab === "discover" && <DiscoverTab dark={dark} userId={session.user.id} onAdded={handleBookAdded} />}
           {tab === "challenges" && <ChallengesTab dark={dark} />}
-          {tab === "profile" && <ProfileTab dark={dark} setDark={setDark} user={session.user} streak={streak} />}
+          {tab === "profile" && <ProfileTab dark={dark} setDark={setDark} user={session.user} streak={streak} earnedBadges={earnedBadges} />}
         </div>
 
         <div className="fixed bottom-0 w-full max-w-md flex justify-around items-center py-2.5 z-20" style={{ background: dark ? T.surfaceDark : "#fff", borderTop: `1px solid ${dark ? "#4a3d2d" : "#EDE3D3"}` }}>
