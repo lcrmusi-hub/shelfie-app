@@ -851,13 +851,22 @@ export default function Shelfie() {
   }, [openBook, openBuddyReadId]);
 
   useEffect(() => {
-    function handlePopState() {
-      setOpenBook(null);
-      setOpenBuddyReadId(null);
+    function handlePopState(e) {
+      if (openBook || openBuddyReadId) {
+        setOpenBook(null);
+        setOpenBuddyReadId(null);
+        return;
+      }
+      setTab(e.state?.tab || "shelf");
     }
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
-  }, []);
+  }, [openBook, openBuddyReadId]);
+
+  function navigateTab(newTab) {
+    setTab(newTab);
+    window.history.pushState({ tab: newTab }, "");
+  }
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session ?? null));
@@ -972,7 +981,7 @@ export default function Shelfie() {
             const Icon = t.icon;
             const active = tab === t.id;
             return (
-              <button key={t.id} onClick={() => setTab(t.id)} className="flex items-center gap-3 px-3 py-2.5 rounded-full text-sm font-medium text-left transition"
+              <button key={t.id} onClick={() => navigateTab(t.id)} className="flex items-center gap-3 px-3 py-2.5 rounded-full text-sm font-medium text-left transition"
                 style={{ background: active ? T.primary : "transparent", color: active ? "#fff" : dark ? T.textLight : T.textPrimary }}>
                 <Icon size={18} />
                 {t.label}
@@ -1007,7 +1016,7 @@ export default function Shelfie() {
             const Icon = t.icon;
             const active = tab === t.id;
             return (
-              <button key={t.id} onClick={() => setTab(t.id)} className="flex flex-col items-center gap-0.5 px-2 py-1">
+              <button key={t.id} onClick={() => navigateTab(t.id)} className="flex flex-col items-center gap-0.5 px-2 py-1">
                 <Icon size={21} color={active ? T.accent : dark ? "#8A7C68" : T.textSecondary} />
                 <span className="text-[10px] font-medium" style={{ color: active ? T.accent : dark ? "#8A7C68" : T.textSecondary }}>{t.label}</span>
               </button>
