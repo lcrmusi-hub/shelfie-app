@@ -13,6 +13,7 @@ import { searchBooks, addToShelf, getShelf, updateShelfEntry, enrichBookDetails 
 import { logReadingSession, getStreak } from "./lib/streak";
 import { getBadgeStatus } from "./lib/badges";
 import { getChallenges, computeChallengeProgress } from "./lib/challenges";
+import { createBuddyRead, getActiveBuddyReads, getBuddyReadDetail, requestToJoin, respondToRequest, getMessages, sendMessage, subscribeToMessages } from "./lib/buddyReadChat";
 
 /* ---------------------------------------------------------------
    COZY LIBRARY — design tokens (from brief, followed exactly)
@@ -262,11 +263,26 @@ function ShelfTab({ dark, books, onOpen }) {
 /* ---------------------------------------------------------------
    BOOK DETAIL SHEET
 --------------------------------------------------------------- */
-function BookDetail({ book, dark, onClose, onUpdate, onEnrich }) {
+function BookDetail({ book, dark, onClose, onUpdate, onEnrich, userId }) {
   const [progress, setProgress] = useState(book.progress);
   const [rating, setRating] = useState(book.rating || 0);
   const [notes, setNotes] = useState(book.private_notes || "");
   const [saving, setSaving] = useState(false);
+  const [showBuddyForm, setShowBuddyForm] = useState(false);
+  const [maxMembers, setMaxMembers] = useState(4);
+  const [pace, setPace] = useState("1 chapter/day");
+  const [buddyMsg, setBuddyMsg] = useState("");
+  const [buddyCreated, setBuddyCreated] = useState(false);
+
+  async function handleCreateBuddyRead() {
+    try {
+      await createBuddyRead(book.book_id, userId, { maxMembers, pace, message: buddyMsg });
+      setBuddyCreated(true);
+      setShowBuddyForm(false);
+    } catch (e) {
+      console.warn("Failed to create buddy read:", e);
+    }
+  }
 
   useEffect(() => {
     if (!book.description || !book.pages) {
@@ -347,9 +363,23 @@ function BookDetail({ book, dark, onClose, onUpdate, onEnrich }) {
           />
         </Section>
 
-        <button className="w-full py-3 rounded-full font-medium text-sm mt-2 flex items-center justify-center gap-2" style={{ background: T.primary, color: "#fff" }}>
-          <Users size={16} /> Start Buddy Read
-        </button>
+        {buddyCreated ? (
+          <p className="text-sm text-center py-3 font-medium" style={{ color: T.success }}>Buddy read started! Others can find it in Discover.</p>
+        ) : showBuddyForm ? (
+          <div className="flex flex-col gap-2">
+            <label className="text-xs font-semibold uppercase tracking-wide" style={{ color: dark ? "#B5A68F" : T.textSecondary }}>Max members</label>
+            <input type="number" min={2} max={5} value={maxMembers} onChange={(e) => setMaxMembers(+e.target.value)} className="px-4 py-2 rounded-full text-sm outline-none" style={{ background: dark ? T.surfaceDark : "#fff", color: dark ? T.textLight : T.textPrimary }} />
+            <label className="text-xs font-semibold uppercase tracking-wide mt-1" style={{ color: dark ? "#B5A68F" : T.textSecondary }}>Pace</label>
+            <input value={pace} onChange={(e) => setPace(e.target.value)} placeholder="e.g. 1 chapter/day" className="px-4 py-2 rounded-full text-sm outline-none" style={{ background: dark ? T.surfaceDark : "#fff", color: dark ? T.textLight : T.textPrimary }} />
+            <label className="text-xs font-semibold uppercase tracking-wide mt-1" style={{ color: dark ? "#B5A68F" : T.textSecondary }}>Message (optional)</label>
+            <textarea value={buddyMsg} onChange={(e) => setBuddyMsg(e.target.value)} rows={2} className="px-4 py-2 rounded-2xl text-sm outline-none" style={{ background: dark ? T.surfaceDark : "#fff", color: dark ? T.textLight : T.textPrimary }} />
+            <button onClick={handleCreateBuddyRead} className="w-full py-3 rounded-full font-medium text-sm mt-1" style={{ background: T.accent, color: "#fff" }}>Create Buddy Read</button>
+          </div>
+        ) : (
+          <button onClick={() => setShowBuddyForm(true)} className="w-full py-3 rounded-full font-medium text-sm mt-2 flex items-center justify-center gap-2" style={{ background: T.primary, color: "#fff" }}>
+            <Users size={16} /> Start Buddy Read
+          </button>
+        )}
       </div>
     </div>
   );
@@ -500,18 +530,33 @@ function DiscoverTab({ dark, userId, onAdded }) {
         <>
           <h3 className="text-sm font-semibold mb-2" style={{ color: dark ? T.textLight : T.textPrimary }}>Buddy Reads open now</h3>
           <div className="flex flex-col gap-2">
-            {BUDDY_READS.map((br) => (
-              <div key={br.id} className="p-3.5 rounded-2xl" style={{ background: dark ? T.surfaceDark : "#fff", boxShadow: dark ? "none" : "0 2px 10px rgba(139,94,60,0.08)" }}>
-                <div className="flex justify-between items-start">
-                  <div>
-                    <p className="text-sm font-semibold" style={{ color: dark ? T.textLight : T.textPrimary }}>{br.book}</p>
-                    <p className="text-xs" style={{ color: dark ? "#8A7C68" : T.textSecondary }}>hosted by @{br.host} · {br.pace}</p>
+            {buddyReads.length === 0 && (
+              <p className="text-sm text-center py-6" style={{ color: dark ? "#8A7C68" : T.textSecondary }}>No buddy reads yet — start one from any book's detail page!</p>
+            )}
+            {buddyReads.map((br) => {
+              const isHost = br.host_id === userId;
+              const alreadyMember = br.buddy_read_members.some((m) => m.user_id === userId);
+              const full = br.acceptedCount >= br.max_members;
+              return (
+                <button key={br.id} onClick={() => onOpenBuddyRead(br.id)} className="p-3.5 rounded-2xl text-left w-full" style={{ background: dark ? T.surfaceDark : "#fff", boxShadow: dark ? "none" : "0 2px 10px rgba(139,94,60,0.08)" }}>
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="text-sm font-semibold" style={{ color: dark ? T.textLight : T.textPrimary }}>{br.books?.title}</p>
+                      <p className="text-xs" style={{ color: dark ? "#8A7C68" : T.textSecondary }}>{isHost ? "hosted by you" : "buddy read"} · {br.pace}</p>
+                    </div>
+                    <span className="text-[11px] px-2 py-1 rounded-full font-medium shrink-0" style={{ background: T.bg, color: T.primary }}>{br.acceptedCount}/{br.max_members} spots</span>
                   </div>
-                  <span className="text-[11px] px-2 py-1 rounded-full font-medium shrink-0" style={{ background: T.bg, color: T.primary }}>{br.spots} spots</span>
-                </div>
-                <button className="mt-2.5 w-full py-2 rounded-full text-xs font-medium text-white" style={{ background: T.accent }}>Request to Join</button>
-              </div>
-            ))}
+                  {!isHost && !alreadyMember && (
+                    <button onClick={(e) => { e.stopPropagation(); handleJoin(br.id); }} disabled={full || joinedIds[br.id]} className="mt-2.5 w-full py-2 rounded-full text-xs font-medium text-white" style={{ background: full ? "#B5A68F" : T.accent }}>
+                      {joinedIds[br.id] ? "Requested" : full ? "Full" : "Request to Join"}
+                    </button>
+                  )}
+                  {alreadyMember && !isHost && (
+                    <p className="mt-2.5 text-xs text-center font-medium" style={{ color: T.success }}>Tap to open discussion</p>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </>
       )}
@@ -522,6 +567,121 @@ function DiscoverTab({ dark, userId, onAdded }) {
 /* ---------------------------------------------------------------
    CHALLENGES TAB
 --------------------------------------------------------------- */
+/* ---------------------------------------------------------------
+   BUDDY READ DETAIL — members, host controls, chapter discussion
+--------------------------------------------------------------- */
+function BuddyReadDetail({ buddyReadId, dark, userId, onClose }) {
+  const [detail, setDetail] = useState(null);
+  const [chapter, setChapter] = useState(1);
+  const [messages, setMessages] = useState([]);
+  const [text, setText] = useState("");
+
+  useEffect(() => {
+    getBuddyReadDetail(buddyReadId, userId).then(setDetail).catch((e) => console.warn(e));
+  }, [buddyReadId]);
+
+  const isHost = detail?.host_id === userId;
+  const isMember = detail?.myMembership?.status === "accepted";
+  const canChat = isHost || isMember;
+
+  useEffect(() => {
+    if (!canChat) return;
+    getMessages(buddyReadId, chapter).then(setMessages).catch((e) => console.warn(e));
+    const unsubscribe = subscribeToMessages(buddyReadId, (msg) => {
+      if (msg.chapter === chapter) setMessages((prev) => [...prev, msg]);
+    });
+    return unsubscribe;
+  }, [buddyReadId, chapter, canChat]);
+
+  async function handleSend() {
+    if (!text.trim()) return;
+    try {
+      await sendMessage(buddyReadId, userId, chapter, text.trim());
+      setText("");
+    } catch (e) {
+      console.warn("Failed to send message:", e);
+    }
+  }
+
+  async function handleRespond(memberRowId, decision) {
+    await respondToRequest(memberRowId, decision);
+    const refreshed = await getBuddyReadDetail(buddyReadId, userId);
+    setDetail(refreshed);
+  }
+
+  if (!detail) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(20,14,8,0.55)" }}>
+        <p style={{ color: "#fff" }}>Loading…</p>
+      </div>
+    );
+  }
+
+  const pending = detail.buddy_read_members.filter((m) => m.status === "pending");
+  const accepted = detail.buddy_read_members.filter((m) => m.status === "accepted");
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end" style={{ background: "rgba(20,14,8,0.55)" }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="w-full max-h-[92vh] overflow-y-auto rounded-t-3xl p-6 pb-10" style={{ background: dark ? T.bgDark : T.bg }}>
+        <button onClick={onClose} style={{ color: dark ? T.textLight : T.textPrimary }}><ChevronLeft /></button>
+
+        <h2 className="text-xl font-bold mt-3 mb-1" style={{ fontFamily: "Playfair Display, serif", color: dark ? T.textLight : T.textPrimary }}>{detail.books?.title}</h2>
+        <p className="text-sm mb-4" style={{ color: dark ? "#B5A68F" : T.textSecondary }}>{detail.pace} · {accepted.length}/{detail.max_members} readers</p>
+
+        {isHost && pending.length > 0 && (
+          <Section dark={dark} title="Join requests">
+            <div className="flex flex-col gap-2">
+              {pending.map((m) => (
+                <div key={m.id} className="flex items-center justify-between p-2.5 rounded-xl" style={{ background: dark ? T.surfaceDark : "#fff" }}>
+                  <span className="text-sm" style={{ color: dark ? T.textLight : T.textPrimary }}>{m.users?.name || m.users?.email}</span>
+                  <div className="flex gap-2">
+                    <button onClick={() => handleRespond(m.id, "accepted")} className="text-xs px-3 py-1.5 rounded-full text-white" style={{ background: T.success }}>Accept</button>
+                    <button onClick={() => handleRespond(m.id, "rejected")} className="text-xs px-3 py-1.5 rounded-full" style={{ background: dark ? "#4a3d2d" : T.bg, color: dark ? T.textLight : T.textSecondary }}>Reject</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Section>
+        )}
+
+        <Section dark={dark} title="Members">
+          <div className="flex flex-wrap gap-2">
+            {accepted.map((m) => (
+              <span key={m.id} className="text-xs px-3 py-1.5 rounded-full" style={{ background: dark ? T.surfaceDark : "#fff", color: dark ? T.textLight : T.textPrimary }}>{m.users?.name || m.users?.email}</span>
+            ))}
+          </div>
+        </Section>
+
+        {canChat ? (
+          <Section dark={dark} title="Discussion" subtitle="organized by chapter — no spoilers ahead!">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xs" style={{ color: dark ? "#8A7C68" : T.textSecondary }}>Chapter</span>
+              <input type="number" min={1} value={chapter} onChange={(e) => setChapter(+e.target.value)} className="w-16 px-3 py-1.5 rounded-full text-sm outline-none" style={{ background: dark ? T.surfaceDark : "#fff", color: dark ? T.textLight : T.textPrimary }} />
+            </div>
+            <div className="flex flex-col gap-2 mb-3 max-h-60 overflow-y-auto">
+              {messages.length === 0 && <p className="text-xs" style={{ color: dark ? "#8A7C68" : T.textSecondary }}>No messages yet for this chapter.</p>}
+              {messages.map((m) => (
+                <div key={m.id} className="p-2.5 rounded-xl" style={{ background: dark ? T.surfaceDark : "#fff" }}>
+                  <p className="text-[11px] font-medium mb-0.5" style={{ color: T.accent }}>{m.users?.name || "Reader"}</p>
+                  <p className="text-sm" style={{ color: dark ? T.textLight : T.textPrimary }}>{m.message}</p>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Share a thought…" className="flex-1 px-4 py-2.5 rounded-full text-sm outline-none" style={{ background: dark ? T.surfaceDark : "#fff", color: dark ? T.textLight : T.textPrimary }} />
+              <button onClick={handleSend} className="px-4 py-2.5 rounded-full text-sm font-medium text-white" style={{ background: T.accent }}>Send</button>
+            </div>
+          </Section>
+        ) : (
+          <p className="text-sm text-center py-4" style={{ color: dark ? "#8A7C68" : T.textSecondary }}>
+            {detail.myMembership?.status === "pending" ? "Your request is pending host approval." : "Request to join to see the discussion."}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ChallengesTab({ dark, books }) {
   const [challenges, setChallenges] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -656,6 +816,7 @@ export default function Shelfie() {
   const [openBook, setOpenBook] = useState(null);
   const [streak, setStreak] = useState(0);
   const [earnedBadges, setEarnedBadges] = useState({});
+  const [openBuddyReadId, setOpenBuddyReadId] = useState(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session ?? null));
@@ -771,7 +932,7 @@ export default function Shelfie() {
         <div className="pb-24">
           {tab === "shelf" && <ShelfTab dark={dark} books={books} onOpen={setOpenBook} />}
           {tab === "stats" && <StatsTab dark={dark} books={books} />}
-          {tab === "discover" && <DiscoverTab dark={dark} userId={session.user.id} onAdded={handleBookAdded} />}
+          {tab === "discover" && <DiscoverTab dark={dark} userId={session.user.id} onAdded={handleBookAdded} onOpenBuddyRead={setOpenBuddyReadId} />}
           {tab === "challenges" && <ChallengesTab dark={dark} books={books} />}
           {tab === "profile" && <ProfileTab dark={dark} setDark={setDark} user={session.user} streak={streak} earnedBadges={earnedBadges} />}
         </div>
@@ -789,7 +950,8 @@ export default function Shelfie() {
           })}
         </div>
 
-        {openBook && <BookDetail book={openBook} dark={dark} onClose={() => setOpenBook(null)} onUpdate={updateBook} onEnrich={handleEnrich} />}
+        {openBook && <BookDetail book={openBook} dark={dark} onClose={() => setOpenBook(null)} onUpdate={updateBook} onEnrich={handleEnrich} userId={session.user.id} />}
+        {openBuddyReadId && <BuddyReadDetail buddyReadId={openBuddyReadId} dark={dark} userId={session.user.id} onClose={() => setOpenBuddyReadId(null)} />}
       </div>
     </div>
   );

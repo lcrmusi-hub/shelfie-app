@@ -103,3 +103,51 @@ export async function removeMember(memberRowId) {
     .eq("id", memberRowId);
   if (error) throw error;
 }
+
+
+// -------------------------------------------------------------
+// Discovery + creation
+// -------------------------------------------------------------
+
+/** Create a new buddy read for a book (called from the book detail screen). */
+export async function createBuddyRead(bookId, hostId, { maxMembers, pace, message }) {
+  const { data, error } = await supabase
+    .from("buddy_reads")
+    .insert({ book_id: bookId, host_id: hostId, max_members: maxMembers, pace, message, status: "active" })
+    .select("*, books(*)")
+    .single();
+  if (error) throw error;
+
+  // Host automatically counts as an accepted member
+  await supabase.from("buddy_read_members").insert({ buddy_read_id: data.id, user_id: hostId, status: "accepted" });
+
+  return data;
+}
+
+/** Fetch all active buddy reads (the public Discover feed), with accepted member counts. */
+export async function getActiveBuddyReads() {
+  const { data: reads, error } = await supabase
+    .from("buddy_reads")
+    .select("*, books(*), buddy_read_members(id, user_id, status)")
+    .eq("status", "active")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+
+  return reads.map((r) => ({
+    ...r,
+    acceptedCount: r.buddy_read_members.filter((m) => m.status === "accepted").length,
+  }));
+}
+
+/** Full detail for one buddy read: book, members (with names), and my own membership status. */
+export async function getBuddyReadDetail(buddyReadId, myUserId) {
+  const { data: read, error } = await supabase
+    .from("buddy_reads")
+    .select("*, books(*), buddy_read_members(id, user_id, status, joined_at, users(name, email))")
+    .eq("id", buddyReadId)
+    .single();
+  if (error) throw error;
+
+  const myMembership = read.buddy_read_members.find((m) => m.user_id === myUserId) || null;
+  return { ...read, myMembership };
+}
