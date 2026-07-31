@@ -474,11 +474,26 @@ function StatsTab({ dark, books }) {
 /* ---------------------------------------------------------------
    DISCOVER TAB
 --------------------------------------------------------------- */
-function DiscoverTab({ dark, userId, onAdded }) {
+function DiscoverTab({ dark, userId, onAdded, onOpenBuddyRead }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const [addedIds, setAddedIds] = useState({});
+  const [buddyReads, setBuddyReads] = useState([]);
+  const [joinedIds, setJoinedIds] = useState({});
+
+  useEffect(() => {
+    getActiveBuddyReads().then(setBuddyReads).catch((e) => console.warn(e));
+  }, []);
+
+  async function handleJoin(brId) {
+    try {
+      await requestToJoin(brId, userId);
+      setJoinedIds((prev) => ({ ...prev, [brId]: true }));
+    } catch (e) {
+      console.warn("Failed to request join:", e);
+    }
+  }
 
   useEffect(() => {
     if (query.trim().length < 2) { setResults([]); return; }
