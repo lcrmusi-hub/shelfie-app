@@ -12,6 +12,7 @@ import { signInWithEmail, signUpWithEmail, signInWithGoogle, signOut } from "./l
 import { searchBooks, addToShelf, getShelf, updateShelfEntry, enrichBookDetails } from "./lib/bookSearch";
 import { logReadingSession, getStreak } from "./lib/streak";
 import { getBadgeStatus } from "./lib/badges";
+import { getChallenges, computeChallengeProgress } from "./lib/challenges";
 
 /* ---------------------------------------------------------------
    COZY LIBRARY — design tokens (from brief, followed exactly)
@@ -521,23 +522,39 @@ function DiscoverTab({ dark, userId, onAdded }) {
 /* ---------------------------------------------------------------
    CHALLENGES TAB
 --------------------------------------------------------------- */
-function ChallengesTab({ dark }) {
+function ChallengesTab({ dark, books }) {
+  const [challenges, setChallenges] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getChallenges()
+      .then(setChallenges)
+      .catch((e) => console.warn("Failed to load challenges:", e))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const finishedBooks = books.filter((b) => b.shelf === "read");
+  const EMOJI = ["🏆", "🐉", "📖", "🌟", "🔥", "📚"];
+
   return (
     <div className="px-5 pt-6 pb-4">
       <h1 style={{ fontFamily: "Playfair Display, serif", color: dark ? T.textLight : T.textPrimary }} className="text-3xl font-bold mb-5">Challenges</h1>
+      {loading && <p className="text-sm" style={{ color: dark ? "#8A7C68" : T.textSecondary }}>Loading…</p>}
       <div className="flex flex-col gap-3">
-        {CHALLENGES.map((c) => {
-          const pct = (c.progress / c.target) * 100;
-          const done = c.progress >= c.target;
+        {challenges.map((c, i) => {
+          const progress = computeChallengeProgress(c, finishedBooks);
+          const pct = Math.min(100, (progress / c.target) * 100);
+          const done = progress >= c.target;
           return (
             <div key={c.id} className="p-4 rounded-2xl flex items-center gap-3" style={{ background: dark ? T.surfaceDark : "#fff", boxShadow: dark ? "none" : "0 2px 10px rgba(139,94,60,0.08)" }}>
-              <div className="text-3xl w-12 h-12 flex items-center justify-center rounded-2xl shrink-0" style={{ background: done ? T.success : T.bg, opacity: done ? 1 : 0.85 }}>{c.badge}</div>
+              <div className="text-3xl w-12 h-12 flex items-center justify-center rounded-2xl shrink-0" style={{ background: done ? T.success : T.bg, opacity: done ? 1 : 0.85 }}>{EMOJI[i % EMOJI.length]}</div>
               <div className="flex-1">
                 <p className="text-sm font-semibold" style={{ color: dark ? T.textLight : T.textPrimary }}>{c.title}</p>
+                {c.description && <p className="text-[11px] mb-1" style={{ color: dark ? "#8A7C68" : T.textSecondary }}>{c.description}</p>}
                 <div className="w-full h-2 rounded-full overflow-hidden mt-1.5 mb-1" style={{ background: dark ? "#4a3d2d" : "#EDE3D3" }}>
                   <div className="h-full rounded-full" style={{ width: `${pct}%`, background: done ? T.success : T.accent }} />
                 </div>
-                <p className="text-[11px]" style={{ color: dark ? "#8A7C68" : T.textSecondary }}>{c.progress} / {c.target} {done && "· Complete! 🎉"}</p>
+                <p className="text-[11px]" style={{ color: dark ? "#8A7C68" : T.textSecondary }}>{progress} / {c.target} {done && "· Complete! 🎉"}</p>
               </div>
             </div>
           );
@@ -755,7 +772,7 @@ export default function Shelfie() {
           {tab === "shelf" && <ShelfTab dark={dark} books={books} onOpen={setOpenBook} />}
           {tab === "stats" && <StatsTab dark={dark} books={books} />}
           {tab === "discover" && <DiscoverTab dark={dark} userId={session.user.id} onAdded={handleBookAdded} />}
-          {tab === "challenges" && <ChallengesTab dark={dark} />}
+          {tab === "challenges" && <ChallengesTab dark={dark} books={books} />}
           {tab === "profile" && <ProfileTab dark={dark} setDark={setDark} user={session.user} streak={streak} earnedBadges={earnedBadges} />}
         </div>
 
