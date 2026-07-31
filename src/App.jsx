@@ -236,9 +236,9 @@ function ShelfTab({ dark, books, onOpen }) {
         ))}
       </div>
 
-      <div className="flex flex-col gap-3 lg:grid lg:grid-cols-2 xl:grid-cols-3 lg:gap-3">
+      <div className="flex flex-col gap-3 md:grid md:grid-cols-2 xl:grid-cols-3 md:gap-3">
         {filtered.length === 0 && (
-          <div className="text-center py-16 lg:col-span-full" style={{ color: dark ? "#8A7C68" : T.textSecondary }}>
+          <div className="text-center py-16 md:col-span-full" style={{ color: dark ? "#8A7C68" : T.textSecondary }}>
             <BookOpen className="mx-auto mb-3 opacity-40" size={36} />
             <p className="text-sm">Nothing on this shelf yet.</p>
             <p className="text-xs mt-1 opacity-70">Go to Discover to search and add a book.</p>
@@ -1125,10 +1125,10 @@ export default function Shelfie() {
   return (
     <div style={{ fontFamily: "Inter, sans-serif" }} className="w-full min-h-screen flex justify-center">
       {fontStyles}
-      <div className="w-full max-w-md lg:max-w-5xl min-h-screen relative lg:flex" style={{ background: dark ? T.bgDark : T.bg, transition: "background 0.25s" }}>
+      <div className="w-full max-w-md md:max-w-5xl min-h-screen relative md:flex" style={{ background: dark ? T.bgDark : T.bg, transition: "background 0.25s" }}>
 
         {/* Desktop sidebar nav (hidden on mobile) */}
-        <div className="hidden lg:flex flex-col w-56 shrink-0 px-4 py-8 gap-1" style={{ borderRight: `1px solid ${dark ? "#4a3d2d" : "#EDE3D3"}` }}>
+        <div className="hidden md:flex flex-col w-56 shrink-0 px-4 py-8 gap-1" style={{ borderRight: `1px solid ${dark ? "#4a3d2d" : "#EDE3D3"}` }}>
           <h1 className="text-2xl font-bold mb-8 px-2" style={{ fontFamily: "Playfair Display, serif", color: dark ? T.textLight : T.textPrimary }}>Shelfie</h1>
           {TABS.map((t) => {
             const Icon = t.icon;
@@ -1148,13 +1148,13 @@ export default function Shelfie() {
 
         <div className="flex-1 min-w-0">
           {/* Mobile-only streak pill */}
-          <div className="sticky top-0 z-10 flex justify-end px-5 pt-4 lg:hidden">
+          <div className="sticky top-0 z-10 flex justify-end px-5 pt-4 md:hidden">
             <div className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold" style={{ background: dark ? T.surfaceDark : "#fff", color: T.accent, boxShadow: dark ? "none" : "0 2px 8px rgba(139,94,60,0.10)" }}>
               <Flame size={13} fill={T.accent} color={T.accent} /> {streak}
             </div>
           </div>
 
-          <div className="pb-24 lg:pb-10">
+          <div className="pb-24 md:pb-10">
             {tab === "shelf" && <ShelfTab dark={dark} books={books} onOpen={setOpenBook} />}
             {tab === "stats" && <StatsTab dark={dark} books={books} />}
             {tab === "discover" && <DiscoverTab dark={dark} userId={session.user.id} onAdded={handleBookAdded} onOpenBuddyRead={setOpenBuddyReadId} />}
@@ -1164,7 +1164,7 @@ export default function Shelfie() {
         </div>
 
         {/* Mobile-only bottom tab bar */}
-        <div className="fixed bottom-0 w-full max-w-md flex justify-around items-center py-2.5 z-20 lg:hidden" style={{ background: dark ? T.surfaceDark : "#fff", borderTop: `1px solid ${dark ? "#4a3d2d" : "#EDE3D3"}` }}>
+        <div className="fixed bottom-0 w-full max-w-md flex justify-around items-center py-2.5 z-20 md:hidden" style={{ background: dark ? T.surfaceDark : "#fff", borderTop: `1px solid ${dark ? "#4a3d2d" : "#EDE3D3"}` }}>
           {TABS.map((t) => {
             const Icon = t.icon;
             const active = tab === t.id;
