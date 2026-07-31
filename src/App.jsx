@@ -1,19 +1,21 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   Search, Flame, BookOpen, BarChart3, Trophy, User, Moon, Sun,
-  Plus, Star, ChevronLeft, Users, Share2, LogOut, Mail, Lock
+  Plus, Star, ChevronLeft, Users, Share2, LogOut, Mail, Lock, ShieldAlert
 } from "lucide-react";
 import {
   PieChart, Pie, Cell, ResponsiveContainer, LineChart, Line,
   XAxis, YAxis, Tooltip
 } from "recharts";
 import { supabase } from "./lib/supabase";
+import html2canvas from "html2canvas";
 import { signInWithEmail, signUpWithEmail, signInWithGoogle, signOut } from "./lib/auth";
-import { searchBooks, addToShelf, getShelf, updateShelfEntry, enrichBookDetails } from "./lib/bookSearch";
+import { searchBooks, addToShelf, getShelf, updateShelfEntry, enrichBookDetails, addManualBook, addContentWarning } from "./lib/bookSearch";
 import { logReadingSession, getStreak } from "./lib/streak";
 import { getBadgeStatus } from "./lib/badges";
 import { getChallenges, computeChallengeProgress } from "./lib/challenges";
 import { createBuddyRead, getActiveBuddyReads, getBuddyReadDetail, requestToJoin, respondToRequest, getMessages, sendMessage, subscribeToMessages } from "./lib/buddyReadChat";
+import { enablePushNotifications, disablePushNotifications } from "./lib/pushNotifications";
 
 /* ---------------------------------------------------------------
    COZY LIBRARY — design tokens (from brief, followed exactly)
@@ -281,6 +283,20 @@ function BookDetail({ book, dark, onClose, onUpdate, onEnrich, userId }) {
   const [pace, setPace] = useState("1 chapter/day");
   const [buddyMsg, setBuddyMsg] = useState("");
   const [buddyCreated, setBuddyCreated] = useState(false);
+  const [warnings, setWarnings] = useState(book.content_warnings || []);
+  const [showWarningPicker, setShowWarningPicker] = useState(false);
+
+  const WARNING_OPTIONS = ["Violence", "Sexual content", "Self-harm", "Death", "Substance abuse", "Abuse"];
+
+  async function handleAddWarning(tag) {
+    try {
+      const updated = await addContentWarning(book.book_id, tag);
+      setWarnings(updated);
+      setShowWarningPicker(false);
+    } catch (e) {
+      console.warn("Failed to add content warning:", e);
+    }
+  }
 
   async function handleCreateBuddyRead() {
     try {
@@ -329,6 +345,26 @@ function BookDetail({ book, dark, onClose, onUpdate, onEnrich, userId }) {
             <p className="text-sm leading-relaxed" style={{ color: dark ? "#B5A68F" : T.textSecondary }}>{book.description}</p>
           </Section>
         )}
+
+        <Section dark={dark} title="Content Warnings" subtitle="community-tagged">
+          <div className="flex gap-2 flex-wrap items-center">
+            {warnings.length === 0 && !showWarningPicker && (
+              <span className="text-xs" style={{ color: dark ? "#8A7C68" : T.textSecondary }}>None tagged yet</span>
+            )}
+            {warnings.map((w) => (
+              <span key={w} className="text-xs px-2.5 py-1 rounded-full flex items-center gap-1" style={{ background: "#F6E4DD", color: T.accent }}><ShieldAlert size={12} /> {w}</span>
+            ))}
+            {!showWarningPicker ? (
+              <button onClick={() => setShowWarningPicker(true)} className="text-xs px-2.5 py-1 rounded-full" style={{ background: dark ? T.surfaceDark : "#fff", color: dark ? T.textLight : T.textSecondary }}>+ Add</button>
+            ) : (
+              <div className="flex gap-1.5 flex-wrap w-full mt-1">
+                {WARNING_OPTIONS.filter((w) => !warnings.includes(w)).map((w) => (
+                  <button key={w} onClick={() => handleAddWarning(w)} className="text-xs px-2.5 py-1 rounded-full" style={{ background: dark ? T.surfaceDark : "#fff", color: dark ? T.textLight : T.textSecondary }}>{w}</button>
+                ))}
+              </div>
+            )}
+          </div>
+        </Section>
 
         <Section dark={dark} title="Find this book">
           <div className="flex gap-2 flex-wrap">
@@ -413,6 +449,31 @@ function StatsTab({ dark, books }) {
   const finished = books.filter((b) => b.shelf === "read");
   const totalPages = finished.reduce((a, b) => a + (b.pages || 0), 0);
   const avgRating = finished.length ? (finished.reduce((a, b) => a + (b.rating || 0), 0) / finished.length).toFixed(1) : "0.0";
+  const cardRef = useRef(null);
+  const [sharing, setSharing] = useState(false);
+
+  async function handleShare() {
+    setSharing(true);
+    try {
+      const canvas = await html2canvas(cardRef.current, { backgroundColor: null, scale: 3 });
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+      const file = new File([blob], "shelfie-stats.png", { type: "image/png" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: "My Shelfie stats" });
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "shelfie-stats.png";
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch (e) {
+      console.warn("Failed to generate share card:", e);
+    } finally {
+      setSharing(false);
+    }
+  }
 
   const genreData = useMemo(() => {
     const m = {};
@@ -423,7 +484,36 @@ function StatsTab({ dark, books }) {
 
   return (
     <div className="px-5 pt-6 pb-4">
-      <h1 style={{ fontFamily: "Playfair Display, serif", color: dark ? T.textLight : T.textPrimary }} className="text-3xl font-bold mb-5">Stats</h1>
+      <div className="flex justify-between items-center mb-5">
+        <h1 style={{ fontFamily: "Playfair Display, serif", color: dark ? T.textLight : T.textPrimary }} className="text-3xl font-bold">Stats</h1>
+        <button onClick={handleShare} disabled={sharing} className="flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-medium text-white" style={{ background: T.primary }}>
+          <Share2 size={13} /> {sharing ? "…" : "Share"}
+        </button>
+      </div>
+
+      {/* Off-screen shareable card, snapshotted by html2canvas */}
+      <div style={{ position: "fixed", left: -9999, top: 0 }}>
+        <div ref={cardRef} style={{ width: 400, height: 500, borderRadius: 24, padding: 36, background: `linear-gradient(160deg, ${T.bg}, ${T.secondary})`, display: "flex", flexDirection: "column", justifyContent: "space-between", fontFamily: "Inter, sans-serif" }}>
+          <div>
+            <p style={{ fontFamily: "Playfair Display, serif", fontSize: 28, fontWeight: 700, color: T.textPrimary }}>My Year in Books</p>
+            <p style={{ color: T.textSecondary, fontSize: 13 }}>via Shelfie</p>
+          </div>
+          <div style={{ display: "flex", gap: 24 }}>
+            <div>
+              <p style={{ fontFamily: "Space Grotesk, monospace", fontSize: 44, fontWeight: 700, color: T.accent }}>{finished.length}</p>
+              <p style={{ color: T.textSecondary, fontSize: 12 }}>books read</p>
+            </div>
+            <div>
+              <p style={{ fontFamily: "Space Grotesk, monospace", fontSize: 44, fontWeight: 700, color: T.accent }}>{totalPages.toLocaleString()}</p>
+              <p style={{ color: T.textSecondary, fontSize: 12 }}>pages</p>
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontFamily: "Space Grotesk, monospace", fontSize: 20, color: T.textPrimary }}>{avgRating} ★ avg rating</span>
+          </div>
+          <p style={{ fontSize: 11, color: T.textSecondary, alignSelf: "flex-end" }}>Made with Shelfie</p>
+        </div>
+      </div>
 
       <Card dark={dark}><CircularGoal done={finished.length} target={12} dark={dark} /></Card>
 
@@ -481,6 +571,24 @@ function DiscoverTab({ dark, userId, onAdded, onOpenBuddyRead }) {
   const [addedIds, setAddedIds] = useState({});
   const [buddyReads, setBuddyReads] = useState([]);
   const [joinedIds, setJoinedIds] = useState({});
+  const [showManualForm, setShowManualForm] = useState(false);
+  const [manualTitle, setManualTitle] = useState("");
+  const [manualAuthor, setManualAuthor] = useState("");
+  const [manualPages, setManualPages] = useState("");
+
+  async function handleManualAdd() {
+    try {
+      const book = await addManualBook({ title: manualTitle, author: manualAuthor, pageCount: manualPages ? +manualPages : null });
+      const row = await addToShelf(userId, book.id, "want_to_read");
+      onAdded(row);
+      setShowManualForm(false);
+      setManualTitle("");
+      setManualAuthor("");
+      setManualPages("");
+    } catch (e) {
+      console.warn("Failed to add manual book:", e);
+    }
+  }
 
   useEffect(() => {
     getActiveBuddyReads().then(setBuddyReads).catch((e) => console.warn(e));
@@ -546,7 +654,19 @@ function DiscoverTab({ dark, userId, onAdded, onOpenBuddyRead }) {
             </div>
           ))}
           {!searching && results.length === 0 && (
-            <p className="text-sm text-center py-6" style={{ color: dark ? "#8A7C68" : T.textSecondary }}>No matches found. Try a different search.</p>
+            <div className="py-4">
+              <p className="text-sm text-center mb-3" style={{ color: dark ? "#8A7C68" : T.textSecondary }}>No matches found for "{query}".</p>
+              {!showManualForm ? (
+                <button onClick={() => setShowManualForm(true)} className="w-full py-2.5 rounded-full text-sm font-medium" style={{ background: T.bg, color: T.primary }}>+ Add "{query}" manually</button>
+              ) : (
+                <div className="flex flex-col gap-2 p-3 rounded-2xl" style={{ background: dark ? T.surfaceDark : "#fff" }}>
+                  <input value={manualTitle} onChange={(e) => setManualTitle(e.target.value)} placeholder="Title" className="px-4 py-2 rounded-full text-sm outline-none" style={{ background: dark ? T.bgDark : T.bg, color: dark ? T.textLight : T.textPrimary }} />
+                  <input value={manualAuthor} onChange={(e) => setManualAuthor(e.target.value)} placeholder="Author" className="px-4 py-2 rounded-full text-sm outline-none" style={{ background: dark ? T.bgDark : T.bg, color: dark ? T.textLight : T.textPrimary }} />
+                  <input value={manualPages} onChange={(e) => setManualPages(e.target.value)} placeholder="Page count (optional)" type="number" className="px-4 py-2 rounded-full text-sm outline-none" style={{ background: dark ? T.bgDark : T.bg, color: dark ? T.textLight : T.textPrimary }} />
+                  <button onClick={handleManualAdd} disabled={!manualTitle.trim()} className="w-full py-2.5 rounded-full text-sm font-medium text-white mt-1" style={{ background: T.accent }}>Add to shelf</button>
+                </div>
+              )}
+            </div>
           )}
         </div>
       ) : (
@@ -751,6 +871,28 @@ function ChallengesTab({ dark, books }) {
    PROFILE TAB
 --------------------------------------------------------------- */
 function ProfileTab({ dark, setDark, user, streak, earnedBadges }) {
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushError, setPushError] = useState("");
+
+  async function togglePush() {
+    setPushBusy(true);
+    setPushError("");
+    try {
+      if (pushEnabled) {
+        await disablePushNotifications(user.id);
+        setPushEnabled(false);
+      } else {
+        await enablePushNotifications(user.id);
+        setPushEnabled(true);
+      }
+    } catch (e) {
+      setPushError(e.message || "Couldn't update notification settings.");
+    } finally {
+      setPushBusy(false);
+    }
+  }
+
   return (
     <div className="px-5 pt-6 pb-4">
       <h1 style={{ fontFamily: "Playfair Display, serif", color: dark ? T.textLight : T.textPrimary }} className="text-3xl font-bold mb-5">Profile</h1>
@@ -798,6 +940,16 @@ function ProfileTab({ dark, setDark, user, streak, earnedBadges }) {
         </button>
       </Card>
 
+      <Card dark={dark} className="mb-4">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium" style={{ color: dark ? T.textLight : T.textPrimary }}>Streak reminders</span>
+          <button onClick={togglePush} disabled={pushBusy} className="w-12 h-7 rounded-full relative transition" style={{ background: pushEnabled ? T.accent : "#D9CDB8" }}>
+            <span className="absolute top-0.5 w-6 h-6 rounded-full bg-white transition-all" style={{ left: pushEnabled ? "22px" : "2px" }} />
+          </button>
+        </div>
+        {pushError && <p className="text-xs mt-2" style={{ color: T.error }}>{pushError}</p>}
+      </Card>
+
       <button onClick={() => signOut()} className="w-full py-3 rounded-full font-medium text-sm flex items-center justify-center gap-2" style={{ background: dark ? T.surfaceDark : "#fff", color: T.error }}>
         <LogOut size={16} /> Sign out
       </button>
@@ -819,6 +971,7 @@ function mapShelfRow(row) {
     cover_url: row.books?.cover_url,
     description: row.books?.description,
     isbn: row.books?.isbn,
+    content_warnings: row.books?.content_warnings || [],
     shelf: row.shelf,
     progress: row.progress,
     mood: row.mood,

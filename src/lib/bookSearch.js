@@ -88,6 +88,17 @@ async function cacheBooks(books) {
   return rows;
 }
 
+export async function addContentWarning(bookId, tag) {
+  const { data: current, error: fetchError } = await supabase.from("books").select("content_warnings").eq("id", bookId).single();
+  if (fetchError) throw fetchError;
+  const existing = current.content_warnings || [];
+  if (existing.includes(tag)) return existing;
+  const updated = [...existing, tag];
+  const { error } = await supabase.from("books").update({ content_warnings: updated }).eq("id", bookId);
+  if (error) throw error;
+  return updated;
+}
+
 export async function addManualBook({ title, author, pageCount, coverFile }) {
   let cover_url = null;
 
