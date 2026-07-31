@@ -147,14 +147,21 @@ function AuthScreen({ dark }) {
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [checkEmailMsg, setCheckEmailMsg] = useState(false);
 
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
+    setCheckEmailMsg(false);
     setBusy(true);
     try {
       if (mode === "signup") {
-        await signUpWithEmail(email, password, name);
+        const result = await signUpWithEmail(email, password, name);
+        // If Supabase requires email confirmation, no session comes back yet —
+        // let the person know instead of silently doing nothing.
+        if (!result.session) {
+          setCheckEmailMsg(true);
+        }
       } else {
         await signInWithEmail(email, password);
       }
@@ -178,6 +185,7 @@ function AuthScreen({ dark }) {
         <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" required minLength={6} className="px-4 py-3 rounded-full text-sm outline-none" style={{ background: dark ? T.surfaceDark : "#fff", color: dark ? T.textLight : T.textPrimary }} />
 
         {error && <p className="text-xs text-center" style={{ color: T.error }}>{error}</p>}
+        {checkEmailMsg && <p className="text-xs text-center" style={{ color: T.success }}>Account created! Check your email to confirm, then sign in.</p>}
 
         <button type="submit" disabled={busy} className="py-3 rounded-full font-medium text-sm text-white mt-1" style={{ background: T.accent }}>
           {busy ? "Please wait…" : mode === "signup" ? "Create account" : "Sign in"}
