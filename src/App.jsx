@@ -818,6 +818,24 @@ export default function Shelfie() {
   const [earnedBadges, setEarnedBadges] = useState({});
   const [openBuddyReadId, setOpenBuddyReadId] = useState(null);
 
+  // Make the phone/browser back button close an open modal instead of
+  // leaving the app. We push a history entry whenever a modal opens, and
+  // treat "back" (popstate) as "close whatever modal is open".
+  useEffect(() => {
+    if (openBook || openBuddyReadId) {
+      window.history.pushState({ modal: true }, "");
+    }
+  }, [openBook, openBuddyReadId]);
+
+  useEffect(() => {
+    function handlePopState() {
+      setOpenBook(null);
+      setOpenBuddyReadId(null);
+    }
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session ?? null));
     const { data: listener } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
@@ -950,8 +968,8 @@ export default function Shelfie() {
           })}
         </div>
 
-        {openBook && <BookDetail book={openBook} dark={dark} onClose={() => setOpenBook(null)} onUpdate={updateBook} onEnrich={handleEnrich} userId={session.user.id} />}
-        {openBuddyReadId && <BuddyReadDetail buddyReadId={openBuddyReadId} dark={dark} userId={session.user.id} onClose={() => setOpenBuddyReadId(null)} />}
+        {openBook && <BookDetail book={openBook} dark={dark} onClose={() => window.history.back()} onUpdate={updateBook} onEnrich={handleEnrich} userId={session.user.id} />}
+        {openBuddyReadId && <BuddyReadDetail buddyReadId={openBuddyReadId} dark={dark} userId={session.user.id} onClose={() => window.history.back()} />}
       </div>
     </div>
   );
